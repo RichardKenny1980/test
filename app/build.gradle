@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
+    id 'kotlin-kapt'
 }
 
 android {
@@ -52,4 +53,3 @@ dependencies {
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.5.2"
 }
 apply plugin: 'com.google.gms.google-services'
-apply plugin: 'kotlin-kapt'
