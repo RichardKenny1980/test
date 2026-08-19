@@ -133,6 +133,31 @@ GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/tasks.readonly",
 ]
 
+# --- Google Workspace domain-wide delegation (optional) -----------------------
+# When configured, Gmail + Chat are synced for every active user in the
+# Workspace domain via a service account impersonating each one - no
+# per-user OAuth consent needed for those two sources. Google Tasks has no
+# domain-wide-delegation support and always uses the per-user OAuth flow
+# above, whether or not this is enabled. See accounts/workspace.py.
+GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "")
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+GOOGLE_WORKSPACE_DOMAIN = os.environ.get("GOOGLE_WORKSPACE_DOMAIN", "")
+GOOGLE_WORKSPACE_ADMIN_EMAIL = os.environ.get("GOOGLE_WORKSPACE_ADMIN_EMAIL", "")
+# Optional Admin SDK Directory query to narrow discovery, e.g. an OU or group:
+#   orgUnitPath='/Sales'
+GOOGLE_WORKSPACE_QUERY = os.environ.get("GOOGLE_WORKSPACE_QUERY", "")
+USE_WORKSPACE_SYNC = _env_bool(
+    "USE_WORKSPACE_SYNC", bool(GOOGLE_SERVICE_ACCOUNT_FILE or GOOGLE_SERVICE_ACCOUNT_JSON)
+)
+GOOGLE_DWD_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/chat.spaces.readonly",
+    "https://www.googleapis.com/auth/chat.messages.readonly",
+]
+GOOGLE_ADMIN_DIRECTORY_SCOPES = [
+    "https://www.googleapis.com/auth/admin.directory.user.readonly",
+]
+
 # --- LLM (Claude) integration -------------------------------------------------
 # Summaries/drafts/urgency flagging are heuristic by default; setting an API
 # key switches them to Claude. See communications/llm.py + summarizer.py.

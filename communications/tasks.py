@@ -6,7 +6,8 @@ import logging
 from celery import shared_task
 from django.contrib.auth import get_user_model
 
-from accounts.services import get_credentials
+from accounts import workspace
+from accounts.services import get_gmail_chat_credentials
 from customers.utils import get_or_create_customer_for_email
 
 from . import summarizer
@@ -50,7 +51,7 @@ def _upsert_communication(user, source, message):
 @shared_task
 def sync_gmail_for_user(user_id):
     user = User.objects.get(pk=user_id)
-    credentials = get_credentials(user)
+    credentials = get_gmail_chat_credentials(user)
     if not credentials:
         logger.info("No Google credentials for user %s; skipping Gmail sync", user_id)
         return 0
@@ -69,7 +70,7 @@ def sync_gmail_for_user(user_id):
 @shared_task
 def sync_chat_for_user(user_id):
     user = User.objects.get(pk=user_id)
-    credentials = get_credentials(user)
+    credentials = get_gmail_chat_credentials(user)
     if not credentials:
         logger.info("No Google credentials for user %s; skipping Chat sync", user_id)
         return 0
@@ -85,6 +86,15 @@ def sync_chat_for_user(user_id):
 
 @shared_task
 def sync_all_communications():
+    """Fan out Gmail/Chat sync for individually-connected users.
+
+    When workspace-wide domain delegation is enabled, accounts.tasks.
+    sync_workspace_directory already discovers and syncs every user in the
+    domain for Gmail/Chat, so this is skipped to avoid duplicate API calls.
+    """
+    if workspace.is_enabled():
+        return
+
     for user in _users_with_google_credentials():
         sync_gmail_for_user.delay(user.id)
         sync_chat_for_user.delay(user.id)

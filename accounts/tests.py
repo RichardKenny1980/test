@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .models import GoogleCredential
-from .services import get_credentials, save_credentials
+from .services import get_credentials, get_gmail_chat_credentials, get_or_create_local_user, save_credentials
 
 User = get_user_model()
 
@@ -116,3 +116,65 @@ class GetCredentialsTests(TestCase):
         get_credentials(self.user)
 
         mock_instance.refresh.assert_not_called()
+
+
+class GetOrCreateLocalUserTests(TestCase):
+    def test_creates_user_keyed_by_email(self):
+        user = get_or_create_local_user("jane@acmecorp.com")
+
+        self.assertEqual(user.username, "jane@acmecorp.com")
+        self.assertEqual(user.email, "jane@acmecorp.com")
+
+    def test_reuses_existing_user(self):
+        first = get_or_create_local_user("jane@acmecorp.com")
+        second = get_or_create_local_user("jane@acmecorp.com")
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(User.objects.filter(username="jane@acmecorp.com").count(), 1)
+
+
+class GetGmailChatCredentialsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="jane@acmecorp.com", email="jane@acmecorp.com")
+
+    @patch("accounts.workspace.get_delegated_credentials")
+    @patch("accounts.workspace.is_domain_email", return_value=True)
+    @patch("accounts.workspace.is_enabled", return_value=True)
+    @patch("accounts.services.get_credentials")
+    def test_prefers_delegated_credentials_for_domain_user(
+        self, mock_get_credentials, mock_is_enabled, mock_is_domain_email, mock_get_delegated
+    ):
+        delegated = MagicMock()
+        mock_get_delegated.return_value = delegated
+
+        result = get_gmail_chat_credentials(self.user)
+
+        self.assertEqual(result, delegated)
+        mock_get_credentials.assert_not_called()
+
+    @patch("accounts.workspace.get_delegated_credentials")
+    @patch("accounts.workspace.is_enabled", return_value=False)
+    @patch("accounts.services.get_credentials")
+    def test_falls_back_to_oauth_when_workspace_sync_disabled(
+        self, mock_get_credentials, mock_is_enabled, mock_get_delegated
+    ):
+        mock_get_credentials.return_value = "oauth-creds"
+
+        result = get_gmail_chat_credentials(self.user)
+
+        self.assertEqual(result, "oauth-creds")
+        mock_get_delegated.assert_not_called()
+
+    @patch("accounts.workspace.get_delegated_credentials")
+    @patch("accounts.workspace.is_domain_email", return_value=False)
+    @patch("accounts.workspace.is_enabled", return_value=True)
+    @patch("accounts.services.get_credentials")
+    def test_falls_back_to_oauth_for_user_outside_delegated_domain(
+        self, mock_get_credentials, mock_is_enabled, mock_is_domain_email, mock_get_delegated
+    ):
+        mock_get_credentials.return_value = "oauth-creds"
+
+        result = get_gmail_chat_credentials(self.user)
+
+        self.assertEqual(result, "oauth-creds")
+        mock_get_delegated.assert_not_called()

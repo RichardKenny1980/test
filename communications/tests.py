@@ -218,7 +218,7 @@ class SyncGmailForUserTests(TestCase):
         self.user = User.objects.create_user(username="rep@example.com")
 
     @patch("communications.tasks.fetch_recent_messages")
-    @patch("communications.tasks.get_credentials")
+    @patch("communications.tasks.get_gmail_chat_credentials")
     def test_creates_communication_and_groups_customer(self, mock_get_credentials, mock_fetch):
         mock_get_credentials.return_value = MagicMock()
         mock_fetch.return_value = [
@@ -245,7 +245,7 @@ class SyncGmailForUserTests(TestCase):
         self.assertTrue(CustomerSummary.objects.filter(customer=comm.customer).exists())
 
     @patch("communications.tasks.fetch_recent_messages")
-    @patch("communications.tasks.get_credentials")
+    @patch("communications.tasks.get_gmail_chat_credentials")
     def test_no_credentials_skips_sync(self, mock_get_credentials, mock_fetch):
         mock_get_credentials.return_value = None
 
@@ -256,7 +256,7 @@ class SyncGmailForUserTests(TestCase):
         self.assertEqual(CommunicationLog.objects.count(), 0)
 
     @patch("communications.tasks.fetch_recent_messages")
-    @patch("communications.tasks.get_credentials")
+    @patch("communications.tasks.get_gmail_chat_credentials")
     def test_second_contact_at_same_domain_reuses_customer(self, mock_get_credentials, mock_fetch):
         mock_get_credentials.return_value = MagicMock()
         existing_customer = get_or_create_customer_for_email("jane@acmecorp.com")
@@ -285,7 +285,7 @@ class SyncChatForUserTests(TestCase):
         self.user = User.objects.create_user(username="rep@example.com")
 
     @patch("communications.tasks.fetch_recent_space_messages")
-    @patch("communications.tasks.get_credentials")
+    @patch("communications.tasks.get_gmail_chat_credentials")
     def test_creates_chat_communication(self, mock_get_credentials, mock_fetch):
         mock_get_credentials.return_value = MagicMock()
         mock_fetch.return_value = [
@@ -459,3 +459,40 @@ class GenerateDraftReplyLLMDispatchTests(TestCase):
 
         self.assertEqual(draft.generated_by, "heuristic-template")
         self.assertIn("Jane Doe", draft.body)
+
+
+class SyncAllCommunicationsWorkspaceSkipTests(TestCase):
+    """sync_all_communications fans out per-user OAuth sync, but should skip
+    entirely when workspace-wide domain delegation is handling Gmail/Chat
+    instead (accounts.tasks.sync_workspace_directory), to avoid syncing the
+    same domain users twice."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="rep@example.com")
+        from accounts.models import GoogleCredential
+
+        GoogleCredential.objects.create(
+            user=self.user,
+            access_token="access",
+            refresh_token="refresh",
+            client_id="client-id",
+            client_secret="client-secret",
+        )
+
+    @patch("communications.tasks.sync_chat_for_user.delay")
+    @patch("communications.tasks.sync_gmail_for_user.delay")
+    @patch("communications.tasks.workspace.is_enabled", return_value=True)
+    def test_skips_when_workspace_sync_enabled(self, mock_is_enabled, mock_gmail_delay, mock_chat_delay):
+        tasks.sync_all_communications()
+
+        mock_gmail_delay.assert_not_called()
+        mock_chat_delay.assert_not_called()
+
+    @patch("communications.tasks.sync_chat_for_user.delay")
+    @patch("communications.tasks.sync_gmail_for_user.delay")
+    @patch("communications.tasks.workspace.is_enabled", return_value=False)
+    def test_fans_out_when_workspace_sync_disabled(self, mock_is_enabled, mock_gmail_delay, mock_chat_delay):
+        tasks.sync_all_communications()
+
+        mock_gmail_delay.assert_called_once_with(self.user.id)
+        mock_chat_delay.assert_called_once_with(self.user.id)

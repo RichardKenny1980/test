@@ -1,12 +1,9 @@
 from django.conf import settings
 from django.contrib.auth import login as auth_login
-from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 from django.urls import reverse
 
-from .services import build_flow, save_credentials
-
-User = get_user_model()
+from .services import build_flow, get_or_create_local_user, save_credentials
 
 
 def google_login(request):
@@ -33,9 +30,7 @@ def google_callback(request):
     if request.user.is_authenticated:
         user = request.user
     elif google_email:
-        user, created = User.objects.get_or_create(
-            username=google_email, defaults={"email": google_email}
-        )
+        user = get_or_create_local_user(google_email)
         auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     else:
         return redirect(reverse("dashboard:index"))

@@ -8,7 +8,7 @@ urgent items, and draft replies on a single auto-refreshing dashboard.
 
 | App             | Responsibility |
 |------------------|----------------|
-| `accounts`       | Google OAuth2 login/consent flow and encrypted-at-rest token storage/refresh. |
+| `accounts`       | Google OAuth2 login/consent flow, encrypted-at-rest token storage/refresh, and optional Workspace domain-wide delegation (service-account impersonation + Admin SDK directory discovery). |
 | `customers`      | `Customer` / `CustomerEmailAlias` models and the email/domain grouping logic. |
 | `communications` | `CommunicationLog` (Gmail + Chat messages), `Draft`, `CustomerSummary` models; Gmail/Chat API clients; the summarization, urgency-flagging, and draft-generation heuristics; Celery sync tasks. |
 | `gtasks`         | `TaskItem` model, Google Tasks API client, Celery sync task. |
@@ -74,6 +74,38 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 4. Put the client ID/secret into `.env`.
 5. Visit `/accounts/google/login/` to connect an account.
 
+### Google Workspace domain-wide delegation (optional)
+
+If you're on Google Workspace, you can skip the per-rep OAuth click for
+Gmail + Chat entirely: a service account impersonates every user in the
+domain instead. Google Tasks has no domain-wide-delegation support, so it
+always uses the per-user OAuth flow above regardless of this setting.
+
+1. In Cloud Console, create a **service account** and download its JSON key.
+2. In the **Workspace Admin console** → Security → API controls →
+   Domain-wide delegation, authorize the service account's **Client ID**
+   for these scopes:
+   `gmail.readonly`, `chat.spaces.readonly`, `chat.messages.readonly`,
+   `admin.directory.user.readonly` (the last one is only needed to
+   enumerate domain users).
+3. Set `GOOGLE_SERVICE_ACCOUNT_FILE` (path to the key) or
+   `GOOGLE_SERVICE_ACCOUNT_JSON` (the key inline), `GOOGLE_WORKSPACE_DOMAIN`,
+   and `GOOGLE_WORKSPACE_ADMIN_EMAIL` (a super admin, or an admin with
+   directory-read privileges - used only to list users, never to read
+   their mail) in `.env`.
+4. Optionally set `GOOGLE_WORKSPACE_QUERY` to restrict discovery to an OU
+   or group, e.g. `orgUnitPath='/Sales'`, instead of the whole domain.
+
+When enabled, `accounts.tasks.sync_workspace_directory` discovers every
+active (non-suspended) user in scope via the Admin SDK Directory API and
+syncs Gmail + Chat for each of them automatically - `communications.tasks.
+sync_all_communications` (the per-user-OAuth fan-out) steps aside to avoid
+double-syncing the same users. This is a real access-model change, not
+just config: it grants org-wide mail/chat read access via one shared key
+rather than per-person opt-in consent, so it's worth confirming with
+whoever owns IT/security policy before enabling it in production - and the
+service account key itself should be treated as a high-value secret.
+
 ### Background workers
 
 ```bash
@@ -87,8 +119,8 @@ celery -A assistant_project worker -l info
 celery -A assistant_project beat -l info
 ```
 
-The beat schedule pulls Gmail + Chat every 5 minutes, Google Tasks every 5
-minutes, and refreshes cached customer summaries every 10 minutes.
+The beat schedule syncs Gmail, Chat, and Google Tasks every 30 minutes,
+and refreshes cached customer summaries every 30 minutes as well.
 
 ## Dashboard
 

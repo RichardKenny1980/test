@@ -1,10 +1,24 @@
 """Google OAuth2 flow helpers and credential persistence/refresh logic."""
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
 from .models import GoogleCredential
+
+User = get_user_model()
+
+
+def get_or_create_local_user(email):
+    """Get or create the Django User for a Google account email.
+
+    Shared by the OAuth callback (a rep connecting their own account) and
+    the workspace directory sync (discovering every user in the domain) so
+    both paths key users the same way.
+    """
+    user, _ = User.objects.get_or_create(username=email, defaults={"email": email})
+    return user
 
 
 def _client_config():
@@ -78,3 +92,21 @@ def get_credentials(user):
         save_credentials(user, credentials, google_email=stored.google_email)
 
     return credentials
+
+
+def get_gmail_chat_credentials(user):
+    """Credentials for Gmail/Chat API calls.
+
+    Prefers workspace-wide domain delegation when it's configured and the
+    user's email falls in the delegated domain (no stored tokens, no
+    refresh needed - the service account key is the credential). Falls back
+    to the user's individually-connected OAuth credentials otherwise.
+    """
+    from . import workspace
+
+    if user.email and workspace.is_enabled() and workspace.is_domain_email(user.email):
+        delegated = workspace.get_delegated_credentials(user.email, settings.GOOGLE_DWD_SCOPES)
+        if delegated:
+            return delegated
+
+    return get_credentials(user)
