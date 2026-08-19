@@ -1,0 +1,95 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assistant Dashboard</title>
+  <link rel="stylesheet" href="{% static 'dashboard/css/dashboard.css' %}">
+</head>
+<body data-refresh-seconds="{{ auto_refresh_seconds }}">
+  <header class="app-header">
+    <h1>Personal Assistant Dashboard</h1>
+    <div class="header-stats">
+      <span class="badge {% if total_urgent %}urgent{% endif %}">
+        {{ total_urgent }} urgent item{{ total_urgent|pluralize }}
+      </span>
+      <span class="refresh-note">Auto-refreshes every {{ auto_refresh_seconds }}s</span>
+    </div>
+  </header>
+
+  <main>
+    {% if not google_connected %}
+      <div class="connect-banner">
+        Connect your Google account to start pulling Gmail, Chat, and Tasks data.
+        <a href="{% url 'accounts:google_login' %}">Connect Google account</a>
+      </div>
+    {% endif %}
+
+    <h2 class="section-title">Customers</h2>
+    {% if customers %}
+      <div class="customer-grid">
+        {% for customer in customers %}
+          <div class="customer-card {% if customer.summary.urgent_count %}has-urgent{% endif %}">
+            <div class="customer-card-header">
+              <div>
+                <h2>{{ customer.name|default:customer.company_domain|default:customer.primary_email }}</h2>
+                {% if customer.company_domain %}
+                  <div class="customer-domain">{{ customer.company_domain }}</div>
+                {% endif %}
+              </div>
+              {% if customer.summary.urgent_count %}
+                <span class="badge urgent">{{ customer.summary.urgent_count }} urgent</span>
+              {% endif %}
+            </div>
+
+            <p class="summary-text">{{ customer.summary.summary_text|default:"No summary yet." }}</p>
+
+            {% if customer.summary.action_points %}
+              <ul class="action-points">
+                {% for point in customer.summary.action_points %}
+                  <li>{{ point }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+
+            {% with customer.drafts.all|slice:":2" as drafts %}
+              {% if drafts %}
+                <ul class="draft-list">
+                  {% for draft in drafts %}
+                    <li class="draft-item">
+                      <div class="draft-subject">{{ draft.subject }}</div>
+                      <div class="draft-body">{{ draft.body|truncatewords:25 }}</div>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            {% endwith %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No customers yet. Once Gmail, Chat, and Tasks data syncs in, customers will appear here.</div>
+    {% endif %}
+
+    <h2 class="section-title">Recent draft replies</h2>
+    {% if recent_drafts %}
+      <div class="customer-grid">
+        {% for draft in recent_drafts %}
+          <div class="customer-card">
+            <div class="customer-card-header">
+              <h2>{{ draft.customer }}</h2>
+            </div>
+            <div class="draft-subject">{{ draft.subject }}</div>
+            <p class="draft-body">{{ draft.body|truncatewords:40 }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No draft replies yet.</div>
+    {% endif %}
+  </main>
+
+  <script src="{% static 'dashboard/js/dashboard.js' %}"></script>
+</body>
+</html>
