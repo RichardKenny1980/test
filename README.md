@@ -29,10 +29,19 @@ address mentioned in the task title/notes.
 
 ### Summarization & drafting
 
-`communications/summarizer.py` implements this with deterministic,
-offline heuristics (keyword matching + extractive summaries), so the
-pipeline needs no external LLM call and is fully unit-testable. It's a
-small, swappable module if you want to plug in an LLM later.
+`communications/summarizer.py` handles urgency flagging, customer
+summaries, and draft replies. It runs on deterministic, offline heuristics
+(keyword matching + extractive summaries) by default, so the pipeline
+needs no external LLM call and is fully unit-testable with no API key.
+
+Setting `ANTHROPIC_API_KEY` switches it to Claude (`communications/llm.py`):
+**Claude Sonnet 5** writes the customer summaries and draft replies (these
+get read by a human, so quality matters), and **Claude Haiku 4.5** does the
+urgency classification pass (cheap and fast, since it runs on every synced
+message/task). Every LLM call returns `None` on any failure - missing key,
+network error, bad response - and `summarizer.py` transparently falls back
+to the heuristic for that item, so a flaky API never breaks a sync run.
+Models are configurable via `LLM_SUMMARY_MODEL` / `LLM_URGENCY_MODEL`.
 
 ## Setup
 
@@ -95,5 +104,6 @@ python manage.py test
 ```
 
 Covers: email/domain customer-grouping rules, urgency-flagging and
-summary/draft generation heuristics, and the Celery sync tasks with the
-Gmail/Chat/Tasks API clients mocked out (no live network calls).
+summary/draft generation (both the heuristic path and the Claude-backed
+path, with the Anthropic client mocked), and the Celery sync tasks with
+the Gmail/Chat/Tasks API clients mocked out. No live network calls.

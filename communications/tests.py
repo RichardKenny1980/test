@@ -2,7 +2,7 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from customers.models import Customer
@@ -308,3 +308,154 @@ class SyncChatForUserTests(TestCase):
         comm = CommunicationLog.objects.get(external_id="spaces/1/messages/1")
         self.assertEqual(comm.source, CommunicationLog.SOURCE_CHAT)
         self.assertEqual(comm.customer.company_domain, "acmecorp.com")
+
+
+@override_settings(USE_LLM=True, ANTHROPIC_API_KEY="test-key")
+class FlagCommunicationLLMDispatchTests(TestCase):
+    """Verify flag_communication/flag_task prefer the LLM when enabled, and
+    fall back to the offline heuristic when the LLM call fails (returns None)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="rep@example.com")
+
+    def _make_comm(self, **overrides):
+        defaults = dict(
+            user=self.user,
+            source=CommunicationLog.SOURCE_EMAIL,
+            external_id="msg-1",
+            subject="Hello",
+            snippet="just a note",
+            occurred_at=timezone.now(),
+        )
+        defaults.update(overrides)
+        return CommunicationLog.objects.create(**defaults)
+
+    @patch("communications.summarizer.llm.classify_urgency")
+    def test_flag_communication_uses_llm_result(self, mock_classify):
+        mock_classify.return_value = (True, "Customer threatened to churn")
+        comm = self._make_comm(subject="Totally normal subject")
+
+        summarizer.flag_communication(comm)
+
+        comm.refresh_from_db()
+        self.assertTrue(comm.is_urgent)
+        self.assertEqual(comm.urgency_reason, "Customer threatened to churn")
+        mock_classify.assert_called_once()
+
+    @patch("communications.summarizer.llm.classify_urgency")
+    def test_falls_back_to_heuristic_when_llm_fails(self, mock_classify):
+        mock_classify.return_value = None
+        comm = self._make_comm(subject="URGENT: please review")
+
+        summarizer.flag_communication(comm)
+
+        comm.refresh_from_db()
+        self.assertTrue(comm.is_urgent)
+        self.assertIn("urgent", comm.urgency_reason.lower())
+
+    @patch("communications.summarizer.llm.classify_urgency")
+    def test_flag_task_uses_llm_result(self, mock_classify):
+        mock_classify.return_value = (True, "Blocking the customer's launch")
+        task = TaskItem.objects.create(
+            user=self.user,
+            google_task_id="task-1",
+            task_list_id="list-1",
+            title="Ordinary task title",
+            status=TaskItem.STATUS_NEEDS_ACTION,
+        )
+
+        summarizer.flag_task(task)
+
+        task.refresh_from_db()
+        self.assertTrue(task.is_urgent)
+        mock_classify.assert_called_once()
+
+
+@override_settings(USE_LLM=False, ANTHROPIC_API_KEY="")
+class FlagCommunicationHeuristicWhenDisabledTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="rep@example.com")
+
+    @patch("communications.summarizer.llm.classify_urgency")
+    def test_llm_never_called_when_disabled(self, mock_classify):
+        comm = CommunicationLog.objects.create(
+            user=self.user,
+            source=CommunicationLog.SOURCE_EMAIL,
+            external_id="msg-1",
+            subject="URGENT: please review",
+            occurred_at=timezone.now(),
+        )
+
+        summarizer.flag_communication(comm)
+
+        mock_classify.assert_not_called()
+        comm.refresh_from_db()
+        self.assertTrue(comm.is_urgent)
+
+
+@override_settings(USE_LLM=True, ANTHROPIC_API_KEY="test-key")
+class BuildCustomerSummaryLLMDispatchTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="rep@example.com")
+        self.customer = Customer.objects.create(name="Acme", company_domain="acmecorp.com")
+
+    @patch("communications.summarizer.llm.summarize_customer")
+    def test_uses_llm_summary_when_available(self, mock_summarize):
+        mock_summarize.return_value = summarizer.llm.CustomerSummaryResult(
+            summary="Acme is happy and renewing next month.",
+            action_points=["Send renewal contract"],
+        )
+
+        summary = summarizer.build_customer_summary(self.customer)
+
+        self.assertEqual(summary.summary_text, "Acme is happy and renewing next month.")
+        self.assertEqual(summary.action_points, ["Send renewal contract"])
+
+    @patch("communications.summarizer.llm.summarize_customer")
+    def test_falls_back_to_heuristic_when_llm_fails(self, mock_summarize):
+        mock_summarize.return_value = None
+
+        summary = summarizer.build_customer_summary(self.customer)
+
+        self.assertIn("No recent communications", summary.summary_text)
+
+
+@override_settings(USE_LLM=True, ANTHROPIC_API_KEY="test-key")
+class GenerateDraftReplyLLMDispatchTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="rep@example.com")
+        self.customer = Customer.objects.create(name="Acme", company_domain="acmecorp.com")
+
+    def _make_comm(self):
+        return CommunicationLog.objects.create(
+            user=self.user,
+            customer=self.customer,
+            source=CommunicationLog.SOURCE_EMAIL,
+            external_id="m1",
+            subject="Contract question",
+            snippet="Can we adjust the terms?",
+            sender_name="Jane Doe",
+            sender_email="jane@acmecorp.com",
+            occurred_at=timezone.now(),
+        )
+
+    @patch("communications.summarizer.llm.draft_reply")
+    def test_uses_llm_draft_when_available(self, mock_draft):
+        mock_draft.return_value = summarizer.llm.DraftReplyResult(
+            subject="Re: Contract question", body="Hi Jane, happy to adjust the terms..."
+        )
+
+        draft = summarizer.generate_draft_reply(self._make_comm())
+
+        self.assertEqual(draft.generated_by, "claude")
+        self.assertEqual(draft.subject, "Re: Contract question")
+        self.assertIn("happy to adjust", draft.body)
+
+    @patch("communications.summarizer.llm.draft_reply")
+    def test_falls_back_to_heuristic_when_llm_fails(self, mock_draft):
+        mock_draft.return_value = None
+
+        draft = summarizer.generate_draft_reply(self._make_comm())
+
+        self.assertEqual(draft.generated_by, "heuristic-template")
+        self.assertIn("Jane Doe", draft.body)

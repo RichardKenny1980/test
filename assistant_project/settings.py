@@ -133,6 +133,14 @@ GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/tasks.readonly",
 ]
 
+# --- LLM (Claude) integration -------------------------------------------------
+# Summaries/drafts/urgency flagging are heuristic by default; setting an API
+# key switches them to Claude. See communications/llm.py + summarizer.py.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+LLM_SUMMARY_MODEL = os.environ.get("LLM_SUMMARY_MODEL", "claude-sonnet-5")
+LLM_URGENCY_MODEL = os.environ.get("LLM_URGENCY_MODEL", "claude-haiku-4-5")
+USE_LLM = _env_bool("USE_LLM", bool(ANTHROPIC_API_KEY))
+
 # --- Celery ------------------------------------------------------------------
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
