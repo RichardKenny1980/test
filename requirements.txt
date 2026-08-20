@@ -1,6 +1,7 @@
 Django>=5.0,<6.0
 celery>=5.3,<6.0
-redis>=5.0
+# <6.0 avoids RESP3/HELLO handshake, unsupported by Redis server <6.0 (e.g. Ubuntu 20.04's redis-server 5.0.7)
+redis>=5.0,<6.0
 google-auth>=2.29
 google-auth-oauthlib>=1.2
 google-api-python-client>=2.126

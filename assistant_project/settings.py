@@ -26,6 +26,11 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "insecure-dev-key-change-in-production
 DEBUG = _env_bool("DEBUG", True)
 ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+if DEBUG:
+    # google-auth-oauthlib refuses to complete the OAuth2 token exchange over
+    # plain http; allow it for local development only.
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -75,6 +80,9 @@ DATABASES = {
     "default": {
         "ENGINE": os.environ.get("DATABASE_ENGINE", "django.db.backends.sqlite3"),
         "NAME": os.environ.get("DATABASE_NAME", BASE_DIR / "db.sqlite3"),
+        # Raises SQLite's busy-timeout so concurrent celery workers wait for
+        # the writer lock instead of immediately raising "database is locked".
+        "OPTIONS": {"timeout": 20},
     }
 }
 if os.environ.get("DATABASE_HOST"):

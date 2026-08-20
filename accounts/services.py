@@ -1,4 +1,6 @@
 """Google OAuth2 flow helpers and credential persistence/refresh logic."""
+from datetime import timezone
+
 from django.conf import settings
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -19,12 +21,13 @@ def _client_config():
     }
 
 
-def build_flow(state=None):
+def build_flow(state=None, code_verifier=None):
     return Flow.from_client_config(
         _client_config(),
         scopes=settings.GOOGLE_OAUTH_SCOPES,
         state=state,
         redirect_uri=settings.GOOGLE_REDIRECT_URI,
+        code_verifier=code_verifier,
     )
 
 
@@ -44,7 +47,9 @@ def save_credentials(user, credentials, google_email=""):
         "client_id": credentials.client_id or settings.GOOGLE_CLIENT_ID,
         "client_secret": credentials.client_secret or settings.GOOGLE_CLIENT_SECRET,
         "scopes": list(credentials.scopes or settings.GOOGLE_OAUTH_SCOPES),
-        "expiry": credentials.expiry,
+        # google-auth stores expiry as a naive UTC datetime; Django's
+        # DateTimeField (USE_TZ=True) needs it timezone-aware.
+        "expiry": credentials.expiry.replace(tzinfo=timezone.utc) if credentials.expiry else None,
     }
     if google_email:
         defaults["google_email"] = google_email
@@ -71,7 +76,11 @@ def get_credentials(user):
         client_secret=stored.client_secret,
         scopes=stored.scopes,
     )
-    credentials.expiry = stored.expiry
+    # google-auth compares expiry against a naive UTC "now", so the
+    # timezone-aware value from Django's DateTimeField must be stripped.
+    credentials.expiry = (
+        stored.expiry.astimezone(timezone.utc).replace(tzinfo=None) if stored.expiry else None
+    )
 
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())

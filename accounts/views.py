@@ -18,13 +18,15 @@ def google_login(request):
         prompt="consent",
     )
     request.session["google_oauth_state"] = state
+    request.session["google_oauth_code_verifier"] = flow.code_verifier
     return redirect(authorization_url)
 
 
 def google_callback(request):
     """Handle Google's OAuth2 redirect: exchange the code, store tokens."""
     state = request.session.get("google_oauth_state")
-    flow = build_flow(state=state)
+    code_verifier = request.session.get("google_oauth_code_verifier")
+    flow = build_flow(state=state, code_verifier=code_verifier)
     flow.fetch_token(authorization_response=request.build_absolute_uri())
     credentials = flow.credentials
 
