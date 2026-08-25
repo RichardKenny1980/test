@@ -34,6 +34,14 @@ summaries, and draft replies. It runs on deterministic, offline heuristics
 (keyword matching + extractive summaries) by default, so the pipeline
 needs no external LLM call and is fully unit-testable with no API key.
 
+Summary quality depends heavily on context: `_communications_as_text` sends
+the model real message bodies, timestamps, and sender identity in
+chronological order (not just subject lines), marks overdue tasks, and
+passes today's date, over a window of the last 12 messages and 10 open
+tasks. The prompts in `communications/llm.py` require specifics - amounts,
+dates, who owes the next move - and explicitly ban filler like "the
+customer sent several messages".
+
 Setting `ANTHROPIC_API_KEY` switches it to Claude (`communications/llm.py`):
 **Claude Sonnet 5** writes the customer summaries and draft replies (these
 get read by a human, so quality matters), and **Claude Haiku 4.5** does the
@@ -124,8 +132,18 @@ and refreshes cached customer summaries every 30 minutes as well.
 
 ## Dashboard
 
-Visit `http://localhost:8000/` for the dashboard: customer cards with
-cached summaries, flagged urgent action points, and recent draft replies.
+Visit `http://localhost:8000/` for the dashboard:
+
+- **Top 10 due today** - a ranked list of what needs attention now: overdue
+  open tasks first (oldest due date first), then tasks due today, then
+  recent urgent messages to fill any remaining slots. Built by
+  `dashboard/services.py:top_items_due_today`.
+- **Customer cards** - cached summary, action points, and recent drafts per
+  customer, with urgent accounts outlined in red.
+- **Light/dark toggle** - top right. The choice persists in `localStorage`
+  and defaults to the OS `prefers-color-scheme`; it's applied before first
+  paint so the 30s auto-refresh doesn't flash.
+
 The page reloads itself every 30 seconds (configurable via
 `DASHBOARD_AUTO_REFRESH_SECONDS`).
 

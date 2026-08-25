@@ -5,6 +5,8 @@ from communications.models import CommunicationLog, Draft
 from customers.models import Customer
 from gtasks.models import TaskItem
 
+from .services import top_items_due_today
+
 
 def index(request):
     customers = (
@@ -21,6 +23,7 @@ def index(request):
 
     context = {
         "customers": customers,
+        "due_today": top_items_due_today(limit=10),
         "total_urgent": urgent_comm_count + urgent_task_count,
         "recent_drafts": Draft.objects.filter(status=Draft.STATUS_DRAFT).select_related("customer")[:10],
         "auto_refresh_seconds": settings.DASHBOARD_AUTO_REFRESH_SECONDS,

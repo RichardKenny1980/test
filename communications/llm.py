@@ -70,25 +70,47 @@ class CustomerSummaryResult(BaseModel):
     action_points: list[str]
 
 
-def summarize_customer(customer_name, communications_text, tasks_text):
+SUMMARY_SYSTEM = """You brief a busy sales/support rep on where each customer \
+account stands. The rep already knows who the customer is - they need to know \
+what changed, what is being asked of them, and what is at stake.
+
+Write the summary as 3-5 sentences of specific prose. Rules:
+- Lead with the live issue or open question, not a description of the inbox.
+- Name concrete specifics: amounts, dates, product names, blockers, decisions, \
+who is waiting on whom.
+- Never write filler like "the customer sent several messages", "there is \
+ongoing correspondence", or "they are engaged". If you cannot say something \
+specific, say less.
+- State who owes the next move (the rep or the customer) and, when the messages \
+imply a deadline, when it is due.
+- Only assert what the messages and tasks actually say. If something is \
+ambiguous, say it is unclear rather than guessing.
+
+Action points are imperative, single-step, and start with a verb ("Send the \
+revised SOW to Jane", "Confirm the March 14 migration window"). Include only \
+what the rep must actually do next - typically 0-4 items. Return an empty list \
+when nothing is genuinely outstanding; padding is worse than an empty list."""
+
+
+def summarize_customer(customer_name, communications_text, tasks_text, today=""):
     """Ask Claude for a concise customer summary + action points.
 
     Returns a CustomerSummaryResult, or None if the call fails.
     """
     prompt = (
-        f"Customer: {customer_name or 'Unknown'}\n\n"
-        f"Recent communications:\n{communications_text or '(none)'}\n\n"
-        f"Open tasks:\n{tasks_text or '(none)'}\n\n"
-        "Write a concise summary (3-5 sentences) of where things stand with this "
-        "customer, and a short list of concrete action points the rep should take "
-        "next. Only include action points that are genuinely actionable now; "
-        "return an empty list if there are none."
+        f"Customer: {customer_name or 'Unknown'}\n"
+        f"Today's date: {today or 'unknown'}\n\n"
+        "=== Recent communications (oldest first) ===\n"
+        f"{communications_text or '(none)'}\n\n"
+        "=== Open tasks ===\n"
+        f"{tasks_text or '(none)'}\n\n"
+        "Brief the rep on this account."
     )
     try:
         response = get_client().messages.parse(
             model=settings.LLM_SUMMARY_MODEL,
             max_tokens=1024,
-            system="You are a concise, accurate assistant summarizing customer activity for a busy sales/support rep.",
+            system=SUMMARY_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             output_format=CustomerSummaryResult,
         )
@@ -103,29 +125,41 @@ class DraftReplyResult(BaseModel):
     body: str
 
 
+DRAFT_SYSTEM = """You draft email replies for a sales/support rep to review, \
+edit, and send. The rep reads every draft before it goes out.
+
+Answer the actual questions asked in the message, point by point. A reply that \
+only acknowledges receipt wastes the rep's time - they can write "thanks, \
+looking into it" themselves.
+
+Rules:
+- Never invent facts: no prices, dates, availability, feature promises, or \
+commitments that are not in the message or clearly implied by it.
+- Where a specific the rep must supply is missing, leave a short bracketed \
+placeholder like [confirm delivery date] rather than guessing a value.
+- Match the sender's register - warm and direct, no corporate padding. Skip \
+openers like "I hope this email finds you well".
+- Keep it under 150 words unless the message genuinely requires more.
+- Sign off with "Best regards" and no name; the rep's signature is appended \
+when they send."""
+
+
 def draft_reply(sender_name, subject, message_text):
     """Ask Claude to draft a reply to a customer message.
 
     Returns a DraftReplyResult, or None if the call fails.
     """
     prompt = (
-        "Draft a short, professional reply to this message.\n\n"
+        "Draft a reply to this message.\n\n"
         f"From: {sender_name or 'the customer'}\n"
         f"Subject: {subject or '(no subject)'}\n"
-        f"Message:\n{message_text or '(no content)'}\n\n"
-        "Keep the tone warm and professional. Do not invent commitments, prices, "
-        "or dates that weren't mentioned. This is a draft for a human to review "
-        "and edit before sending, not a final reply."
+        f"Message:\n{message_text or '(no content)'}"
     )
     try:
         response = get_client().messages.parse(
             model=settings.LLM_SUMMARY_MODEL,
             max_tokens=512,
-            system=(
-                "You draft concise, professional email replies on behalf of a "
-                "sales/support rep. The rep reviews and edits every draft before "
-                "sending, so it's fine to leave specifics for them to fill in."
-            ),
+            system=DRAFT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             output_format=DraftReplyResult,
         )

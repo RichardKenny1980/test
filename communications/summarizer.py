@@ -95,23 +95,51 @@ def _heuristic_summary(recent_communications, open_tasks, urgent_comms, urgent_t
     return "\n".join(lines), action_points
 
 
-def _communications_as_text(communications):
+def _communications_as_text(communications, body_chars=1200):
+    """Render communications for the LLM prompt.
+
+    Includes real message bodies, dates, and sender identity - a summary
+    built from subject lines alone can only ever restate the subject lines.
+    Oldest first so the model reads the thread in chronological order.
+    """
     lines = []
-    for comm in communications:
-        label = comm.subject or (comm.snippet[:60] if comm.snippet else "(no subject)")
-        lines.append(f"- [{comm.get_source_display()}] {label} ({comm.sender_email or 'unknown sender'})")
-    return "\n".join(lines)
+    for comm in reversed(list(communications)):
+        when = timezone.localtime(comm.occurred_at).strftime("%Y-%m-%d %H:%M")
+        sender = comm.sender_name or comm.sender_email or "unknown sender"
+        if comm.sender_name and comm.sender_email:
+            sender = f"{comm.sender_name} <{comm.sender_email}>"
+        body = (comm.body_text or comm.snippet or "").strip()
+        if len(body) > body_chars:
+            body = body[:body_chars] + "... [truncated]"
+
+        lines.append(f"[{comm.get_source_display()}] {when} - from {sender}")
+        lines.append(f"Subject: {comm.subject or '(no subject)'}")
+        if comm.is_urgent:
+            lines.append(f"Flagged urgent: {comm.urgency_reason or 'yes'}")
+        lines.append(body or "(no body text)")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _tasks_as_text(tasks):
+    now = timezone.localtime()
     lines = []
     for task in tasks:
-        due = task.due.strftime("%Y-%m-%d") if task.due else "no due date"
-        lines.append(f"- {task.title} (due {due})")
+        if task.due:
+            due_local = timezone.localtime(task.due)
+            due = due_local.strftime("%Y-%m-%d")
+            if due_local < now:
+                due += " - OVERDUE"
+        else:
+            due = "no due date"
+        line = f"- {task.title} (due {due})"
+        if task.notes:
+            line += f"\n  notes: {task.notes.strip()[:300]}"
+        lines.append(line)
     return "\n".join(lines)
 
 
-def build_customer_summary(customer, communication_limit=5, task_limit=5):
+def build_customer_summary(customer, communication_limit=12, task_limit=10):
     """Regenerate and persist the cached CustomerSummary for one customer."""
     from .models import CustomerSummary
 
@@ -120,6 +148,8 @@ def build_customer_summary(customer, communication_limit=5, task_limit=5):
     urgent_comms = list(customer.communications.filter(is_urgent=True))
     urgent_tasks = list(customer.tasks.filter(is_urgent=True).exclude(status="completed"))
 
+    # The heuristic version is always computed so it can stand in if the LLM
+    # is disabled or the call fails.
     summary_text, action_points = _heuristic_summary(
         recent_communications, open_tasks, urgent_comms, urgent_tasks
     )
@@ -129,6 +159,7 @@ def build_customer_summary(customer, communication_limit=5, task_limit=5):
             str(customer),
             _communications_as_text(recent_communications),
             _tasks_as_text(open_tasks),
+            today=timezone.localtime().strftime("%A %d %B %Y"),
         )
         if llm_result is not None:
             summary_text = llm_result.summary

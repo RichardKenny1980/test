@@ -419,6 +419,59 @@ class BuildCustomerSummaryLLMDispatchTests(TestCase):
 
         self.assertIn("No recent communications", summary.summary_text)
 
+    @patch("communications.summarizer.llm.summarize_customer")
+    def test_sends_message_bodies_and_dates_to_the_llm(self, mock_summarize):
+        """Summary quality depends on the model seeing real message content -
+        subject lines alone can only produce subject-line summaries."""
+        mock_summarize.return_value = None
+        CommunicationLog.objects.create(
+            user=self.user,
+            customer=self.customer,
+            source=CommunicationLog.SOURCE_EMAIL,
+            external_id="m1",
+            subject="Renewal terms",
+            sender_name="Jane Doe",
+            sender_email="jane@acmecorp.com",
+            body_text="We need the discount confirmed before the March 14 board meeting.",
+            occurred_at=timezone.now(),
+        )
+        TaskItem.objects.create(
+            user=self.user,
+            customer=self.customer,
+            google_task_id="t1",
+            task_list_id="l1",
+            title="Send revised quote",
+            notes="Finance approved 12%",
+            status=TaskItem.STATUS_NEEDS_ACTION,
+        )
+
+        summarizer.build_customer_summary(self.customer)
+
+        _, comms_text, tasks_text = mock_summarize.call_args[0]
+        self.assertIn("March 14 board meeting", comms_text)
+        self.assertIn("Jane Doe <jane@acmecorp.com>", comms_text)
+        self.assertIn("Renewal terms", comms_text)
+        self.assertIn("Finance approved 12%", tasks_text)
+        self.assertTrue(mock_summarize.call_args.kwargs["today"])
+
+    @patch("communications.summarizer.llm.summarize_customer")
+    def test_marks_overdue_tasks_in_llm_context(self, mock_summarize):
+        mock_summarize.return_value = None
+        TaskItem.objects.create(
+            user=self.user,
+            customer=self.customer,
+            google_task_id="t1",
+            task_list_id="l1",
+            title="Overdue thing",
+            due=timezone.now() - datetime.timedelta(days=3),
+            status=TaskItem.STATUS_NEEDS_ACTION,
+        )
+
+        summarizer.build_customer_summary(self.customer)
+
+        tasks_text = mock_summarize.call_args[0][2]
+        self.assertIn("OVERDUE", tasks_text)
+
 
 @override_settings(USE_LLM=True, ANTHROPIC_API_KEY="test-key")
 class GenerateDraftReplyLLMDispatchTests(TestCase):
