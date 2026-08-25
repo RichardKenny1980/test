@@ -1,33 +1,41 @@
 from django.conf import settings
 from django.shortcuts import render
 
-from communications.models import CommunicationLog, Draft
+from communications.models import Draft
 from customers.models import Customer
-from gtasks.models import TaskItem
 
-from .services import top_items_due_today
+from .services import top_actions_today, todays_meetings, urgent_counts
 
 
 def index(request):
-    customers = (
-        Customer.objects.all()
-        .select_related("summary")
-        .prefetch_related("communications", "tasks", "drafts")
-        .order_by("name", "company_domain")
-    )
+    user = request.user
+    authenticated = user.is_authenticated
 
-    urgent_comm_count = CommunicationLog.objects.filter(is_urgent=True).count()
-    urgent_task_count = TaskItem.objects.filter(is_urgent=True).exclude(
-        status=TaskItem.STATUS_COMPLETED
-    ).count()
+    # Customers are org-level entities, but only surface the ones this user
+    # actually has activity with - otherwise every rep sees every account.
+    customers = Customer.objects.none()
+    drafts = Draft.objects.none()
+    if authenticated:
+        customers = (
+            Customer.objects.filter(communications__user=user)
+            .distinct()
+            .select_related("summary")
+            .prefetch_related("communications", "tasks", "drafts")
+            .order_by("name", "company_domain")
+        )
+        drafts = (
+            Draft.objects.filter(status=Draft.STATUS_DRAFT, communication__user=user)
+            .select_related("customer")[:10]
+        )
 
     context = {
         "customers": customers,
-        "due_today": top_items_due_today(limit=10),
-        "total_urgent": urgent_comm_count + urgent_task_count,
-        "recent_drafts": Draft.objects.filter(status=Draft.STATUS_DRAFT).select_related("customer")[:10],
+        "meetings": todays_meetings(user),
+        "due_today": top_actions_today(user, limit=10),
+        "total_urgent": urgent_counts(user),
+        "recent_drafts": drafts,
         "auto_refresh_seconds": settings.DASHBOARD_AUTO_REFRESH_SECONDS,
-        "google_connected": request.user.is_authenticated
-        and hasattr(request.user, "google_credential"),
+        "google_connected": authenticated and hasattr(user, "google_credential"),
+        "authenticated": authenticated,
     }
     return render(request, "dashboard/index.html", context)

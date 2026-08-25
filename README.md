@@ -1,8 +1,9 @@
 # Personal Assistant Tool
 
-A Django web app that aggregates a rep's Gmail, Google Chat (Spaces), and
-Google Tasks activity, groups it by customer, and surfaces summaries,
-urgent items, and draft replies on a single auto-refreshing dashboard.
+A Django web app that aggregates a rep's Gmail, Google Chat (Spaces),
+Google Tasks, and Google Calendar activity, groups it by customer, and
+surfaces a ranked "what to do today" list, meetings, summaries, and draft
+replies on a single auto-refreshing dashboard.
 
 ## Architecture
 
@@ -12,10 +13,11 @@ urgent items, and draft replies on a single auto-refreshing dashboard.
 | `customers`      | `Customer` / `CustomerEmailAlias` models and the email/domain grouping logic. |
 | `communications` | `CommunicationLog` (Gmail + Chat messages), `Draft`, `CustomerSummary` models; Gmail/Chat API clients; the summarization, urgency-flagging, and draft-generation heuristics; Celery sync tasks. |
 | `gtasks`         | `TaskItem` model, Google Tasks API client, Celery sync task. |
+| `gcal`           | `CalendarEvent` model, Google Calendar API client, Celery sync task; links events to customers via external attendee emails. |
 | `dashboard`      | The web dashboard view/template (auto-refreshes every 30s). |
 
-Background sync (`communications.tasks`, `gtasks.tasks`) runs on a Celery
-worker + beat schedule (see `assistant_project/celery.py`) so Google API
+Background sync (`communications.tasks`, `gtasks.tasks`, `gcal.tasks`) runs
+on a Celery worker + beat schedule (see `assistant_project/celery.py`) so Google API
 calls never block a request.
 
 ### Customer grouping
@@ -78,15 +80,16 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
    create an OAuth 2.0 Client ID (Web application).
 2. Add `http://localhost:8000/accounts/google/callback/` as an authorized
    redirect URI.
-3. Enable the Gmail API, Google Chat API, and Google Tasks API for the project.
+3. Enable the Gmail API, Google Chat API, Google Tasks API, and Google
+   Calendar API for the project.
 4. Put the client ID/secret into `.env`.
 5. Visit `/accounts/google/login/` to connect an account.
 
 ### Google Workspace domain-wide delegation (optional)
 
 If you're on Google Workspace, you can skip the per-rep OAuth click for
-Gmail + Chat entirely: a service account impersonates every user in the
-domain instead. Google Tasks has no domain-wide-delegation support, so it
+Gmail, Chat, and Calendar entirely: a service account impersonates every
+user in the domain instead. Google Tasks has no domain-wide-delegation support, so it
 always uses the per-user OAuth flow above regardless of this setting.
 
 1. In Cloud Console, create a **service account** and download its JSON key.
@@ -94,8 +97,8 @@ always uses the per-user OAuth flow above regardless of this setting.
    Domain-wide delegation, authorize the service account's **Client ID**
    for these scopes:
    `gmail.readonly`, `chat.spaces.readonly`, `chat.messages.readonly`,
-   `admin.directory.user.readonly` (the last one is only needed to
-   enumerate domain users).
+   `calendar.readonly`, `admin.directory.user.readonly` (the last one is
+   only needed to enumerate domain users).
 3. Set `GOOGLE_SERVICE_ACCOUNT_FILE` (path to the key) or
    `GOOGLE_SERVICE_ACCOUNT_JSON` (the key inline), `GOOGLE_WORKSPACE_DOMAIN`,
    and `GOOGLE_WORKSPACE_ADMIN_EMAIL` (a super admin, or an admin with
@@ -106,9 +109,10 @@ always uses the per-user OAuth flow above regardless of this setting.
 
 When enabled, `accounts.tasks.sync_workspace_directory` discovers every
 active (non-suspended) user in scope via the Admin SDK Directory API and
-syncs Gmail + Chat for each of them automatically - `communications.tasks.
-sync_all_communications` (the per-user-OAuth fan-out) steps aside to avoid
-double-syncing the same users. This is a real access-model change, not
+syncs Gmail + Chat + Calendar for each of them automatically. The
+per-user-OAuth fan-outs (`communications.tasks.sync_all_communications` and
+`gcal.tasks.sync_all_calendars`) step aside to avoid double-syncing the
+same users. This is a real access-model change, not
 just config: it grants org-wide mail/chat read access via one shared key
 rather than per-person opt-in consent, so it's worth confirming with
 whoever owns IT/security policy before enabling it in production - and the
@@ -127,19 +131,25 @@ celery -A assistant_project worker -l info
 celery -A assistant_project beat -l info
 ```
 
-The beat schedule syncs Gmail, Chat, and Google Tasks every 30 minutes,
-and refreshes cached customer summaries every 30 minutes as well.
+The beat schedule syncs Gmail, Chat, Google Tasks, and Google Calendar
+every 30 minutes, and refreshes cached customer summaries every 30 minutes
+as well.
 
 ## Dashboard
 
 Visit `http://localhost:8000/` for the dashboard:
 
-- **Top 10 due today** - a ranked list of what needs attention now: overdue
-  open tasks first (oldest due date first), then tasks due today, then
-  recent urgent messages to fill any remaining slots. Built by
-  `dashboard/services.py:top_items_due_today`.
+- **Today** - everything scoped to the signed-in user:
+  - *Meetings today* - the day's calendar events in time order, with
+    attendees, location, and a Join link for video calls. Meetings are shown
+    separately rather than competing for the ten action slots.
+  - *Top 10 to do today* - a ranked list drawn from all three sources:
+    overdue tasks first (oldest first), then tasks due today, then urgent
+    unanswered emails and chat messages (newest first), then undated tasks
+    flagged urgent. Built by `dashboard/services.py:top_actions_today`.
 - **Customer cards** - cached summary, action points, and recent drafts per
-  customer, with urgent accounts outlined in red.
+  customer, with urgent accounts outlined in red. Only customers the signed-in
+  user actually has communications with are shown.
 - **Light/dark toggle** - top right. The choice persists in `localStorage`
   and defaults to the OS `prefers-color-scheme`; it's applied before first
   paint so the 30s auto-refresh doesn't flash.

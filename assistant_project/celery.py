@@ -31,6 +31,12 @@ app.conf.beat_schedule = {
         "task": "gtasks.tasks.sync_all_tasks",
         "schedule": crontab(minute="*/30"),
     },
+    # Calendar supports domain-wide delegation, so under workspace-wide sync
+    # this steps aside and the directory sync fans it out per user instead.
+    "sync-google-calendar-every-30-minutes": {
+        "task": "gcal.tasks.sync_all_calendars",
+        "schedule": crontab(minute="*/30"),
+    },
     "refresh-customer-summaries-every-30-minutes": {
         "task": "communications.tasks.refresh_all_customer_summaries",
         "schedule": crontab(minute="*/30"),

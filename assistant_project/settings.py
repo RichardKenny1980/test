@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "customers",
     "communications",
     "gtasks",
+    "gcal",
     "dashboard",
 ]
 
@@ -131,6 +132,7 @@ GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
     "https://www.googleapis.com/auth/tasks.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
 ]
 
 # --- Google Workspace domain-wide delegation (optional) -----------------------
@@ -153,6 +155,7 @@ GOOGLE_DWD_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
 ]
 GOOGLE_ADMIN_DIRECTORY_SCOPES = [
     "https://www.googleapis.com/auth/admin.directory.user.readonly",

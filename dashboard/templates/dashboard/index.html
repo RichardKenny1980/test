@@ -40,16 +40,46 @@
   <main>
     {% if not google_connected %}
       <div class="connect-banner">
-        Connect your Google account to start pulling Gmail, Chat, and Tasks data.
+        Connect your Google account to start pulling Gmail, Chat, Tasks, and Calendar data.
         <a href="{% url 'accounts:google_login' %}">Connect Google account</a>
       </div>
     {% endif %}
 
     <section class="today-panel">
       <div class="panel-header">
-        <h2>Top 10 due today</h2>
-        <span class="panel-count">{{ due_today|length }} item{{ due_today|length|pluralize }}</span>
+        <h2>Today</h2>
+        <span class="panel-count">
+          {{ due_today|length }} action{{ due_today|length|pluralize }}
+          &middot; {{ meetings|length }} meeting{{ meetings|length|pluralize }}
+        </span>
       </div>
+
+      {% if meetings %}
+        <div class="meetings-strip">
+          <h3 class="subpanel-title">Meetings today</h3>
+          <ul class="meeting-list">
+            {% for meeting in meetings %}
+              <li class="meeting-item {% if meeting.is_in_progress %}in-progress{% endif %}">
+                <span class="meeting-time">
+                  {% if meeting.is_all_day %}All day{% else %}{{ meeting.start|date:"H:i" }}{% endif %}
+                </span>
+                <div class="meeting-body">
+                  <span class="meeting-title">{{ meeting.title|default:"(untitled event)" }}</span>
+                  {% if meeting.is_in_progress %}<span class="tag tag-now">Now</span>{% endif %}
+                  {% if meeting.meta_line %}
+                    <div class="meeting-meta">{{ meeting.meta_line }}</div>
+                  {% endif %}
+                </div>
+                {% if meeting.conference_url %}
+                  <a class="meeting-join" href="{{ meeting.conference_url }}" target="_blank" rel="noopener">Join</a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <h3 class="subpanel-title">Top 10 to do today</h3>
       {% if due_today %}
         <ol class="today-list">
           {% for item in due_today %}
@@ -60,24 +90,28 @@
                   <span class="today-title">{{ item.title }}</span>
                   {% if item.is_overdue %}
                     <span class="tag tag-overdue">Overdue</span>
-                  {% elif item.kind == "task" %}
+                  {% elif item.kind == "task" and item.when %}
                     <span class="tag tag-due">Due today</span>
                   {% else %}
                     <span class="tag tag-urgent">Urgent</span>
                   {% endif %}
-                  <span class="tag tag-kind">{{ item.kind|capfirst }}</span>
+                  <span class="tag tag-kind">{{ item.source_label }}</span>
                 </div>
                 <div class="today-meta">
                   {% if item.customer %}{{ item.customer }} &middot; {% endif %}
-                  {% if item.kind == "task" %}due {{ item.when|date:"D j M" }}{% else %}{{ item.when|date:"D j M, H:i" }}{% endif %}
+                  {% if item.when %}
+                    {% if item.kind == "task" %}due {{ item.when|date:"D j M" }}{% else %}{{ item.when|date:"D j M, H:i" }}{% endif %}
+                  {% else %}no due date{% endif %}
                   {% if item.detail %} &middot; {{ item.detail }}{% endif %}
                 </div>
               </div>
             </li>
           {% endfor %}
         </ol>
+      {% elif not authenticated %}
+        <div class="empty-state slim">Sign in with Google to see your day.</div>
       {% else %}
-        <div class="empty-state slim">Nothing due today. Enjoy the quiet.</div>
+        <div class="empty-state slim">Nothing needs doing today. Enjoy the quiet.</div>
       {% endif %}
     </section>
 
