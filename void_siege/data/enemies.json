@@ -1,0 +1,9 @@
+{
+  "skitterling":      {"name": "Skitterling",      "hp": 28,   "speed": 55, "armor": 0, "reward": 2,   "leak": 1,  "radius": 5},
+  "spine_brute":      {"name": "Spine Brute",      "hp": 240,  "speed": 22, "armor": 0, "reward": 10,  "leak": 2,  "radius": 10},
+  "carapace_crawler": {"name": "Carapace Crawler", "hp": 110,  "speed": 30, "armor": 6, "reward": 7,   "leak": 1,  "radius": 8},
+  "gloomwing":        {"name": "Gloomwing",        "hp": 70,   "speed": 42, "armor": 0, "reward": 6,   "leak": 1,  "radius": 7, "flying": true},
+  "burrower":         {"name": "Burrower",         "hp": 90,   "speed": 34, "armor": 0, "reward": 8,   "leak": 1,  "radius": 7, "burrowed": true},
+  "hive_titan":       {"name": "Hive Titan",       "hp": 4000, "speed": 12, "armor": 4, "reward": 150, "leak": 10, "radius": 18,
+                       "boss": true, "slow_resist": 0.5, "spawns": "skitterling", "spawn_every": 4.0}
+}

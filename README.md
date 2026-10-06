@@ -97,3 +97,7 @@ python manage.py test
 Covers: email/domain customer-grouping rules, urgency-flagging and
 summary/draft generation heuristics, and the Celery sync tasks with the
 Gmail/Chat/Tasks API clients mocked out (no live network calls).
+
+## Void Siege (game)
+
+`void_siege/` holds a separate Python/pygame-ce tower defense game. See [void_siege/README.md](void_siege/README.md).

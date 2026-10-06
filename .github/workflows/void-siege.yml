@@ -1,0 +1,22 @@
+name: Void Siege
+
+on:
+  push:
+    paths: ["void_siege/**", ".github/workflows/void-siege.yml"]
+  pull_request:
+    paths: ["void_siege/**", ".github/workflows/void-siege.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r void_siege/requirements.txt ruff
+      - run: ruff check void_siege --line-length 120
+      - run: python -m pytest void_siege -q
