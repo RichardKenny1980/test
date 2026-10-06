@@ -6,7 +6,7 @@ from . import palette as P
 from .art import scale_by
 
 TIER_NAMES = ("Mk I", "Mk II", "Mk III")
-INFO_RIGHT = 470
+INFO_RIGHT = WIDTH - 170  # the info panel stretches; the big buttons stay at the right edge
 
 
 class Button:
@@ -21,9 +21,9 @@ def make_buttons():
     """Big console buttons, sized for thumbs."""
     y = FIELD_HEIGHT + 5
     return [
-        Button((474, y, 78, 34), ("speed",), "1x", "F"),
-        Button((474, y + 37, 78, 34), ("pause",), "PAUSE", "P"),
-        Button((556, y, 80, 71), ("wave",), "WAVE", "SPACE"),
+        Button((WIDTH - 166, y, 78, 34), ("speed",), "1x", "F"),
+        Button((WIDTH - 166, y + 37, 78, 34), ("pause",), "PAUSE", "P"),
+        Button((WIDTH - 84, y, 80, 71), ("wave",), "WAVE", "SPACE"),
     ]
 
 

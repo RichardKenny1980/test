@@ -17,7 +17,7 @@ from .render.field import FieldRenderer
 from .render.fx import Effects
 from .render.hud import Hud
 from .render.radial import BUILD_ORDER, RadialMenu
-from .settings import FIELD_HEIGHT, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
+from .settings import ANDROID, FIELD_HEIGHT, FIELD_X, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
 
 WEB = sys.platform == "emscripten"
 BUILD_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
@@ -51,7 +51,10 @@ class Game:
     def __init__(self, scaled=not WEB):
         pygame.init()
         pygame.display.set_caption(TITLE)
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED if scaled else 0)
+        flags = pygame.SCALED if scaled else 0
+        if ANDROID:
+            flags |= pygame.FULLSCREEN  # immersive: hides the status and navigation bars
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
         self.clock = pygame.time.Clock()
         self.fonts = {
             "small": pygame.font.Font(None, 15),
@@ -145,7 +148,7 @@ class MenuScene:
         for x, y, speed, color in self.stars:
             screen.set_at((int(x), int(y)), color if speed > 6 else P.STEEL_DARK)
         # the frontier moon
-        cx, cy = 500, 300
+        cx, cy = WIDTH - 140, 300
         pygame.draw.circle(screen, P.SAND_DARK, (cx, cy), 150)
         pygame.draw.circle(screen, P.SAND, (cx - 10, cy - 10), 140)
         for ox, oy, r in ((-60, -90, 18), (20, -110, 10), (-110, -30, 12), (40, -60, 24)):
@@ -201,7 +204,7 @@ class UiState:
 class BattleScene:
     def __init__(self, game, map_name="map01"):
         self.game = game
-        self.world = World(map_name)
+        self.world = World(map_name, offset_x=FIELD_X)
         self.ui = UiState()
         self.field = FieldRenderer(self.world, game.sprites)
         self.fx = Effects(game.fonts["small"])
