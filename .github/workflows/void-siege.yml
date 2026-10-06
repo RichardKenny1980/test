@@ -34,3 +34,10 @@ jobs:
         with:
           name: void-siege-web
           path: build/voidsiege/build/web
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+      - run: python .github/scripts/web_smoke.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-smoke
+          path: web-smoke
