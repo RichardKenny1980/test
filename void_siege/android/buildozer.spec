@@ -16,6 +16,10 @@ android.minapi = 24
 android.archs = arm64-v8a, x86_64
 android.accept_sdk_license = True
 p4a.bootstrap = sdl2
+# p4a's pygame recipe is 2.1.0, whose C sources only compile against Python <= 3.10;
+# newer p4a releases build Python 3.11+, so pin the last release that ships 3.10.
+p4a.branch = v2023.09.16
+android.ndk = 25b
 
 [buildozer]
 log_level = 2
