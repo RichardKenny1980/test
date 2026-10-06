@@ -10,6 +10,7 @@ import pygame
 
 from ..settings import FIELD_HEIGHT, WIDTH
 from . import palette as P
+from .art import scale_by
 
 RING = 36           # distance from the pad centre to each option
 OPTION_R = 17       # option button radius (34px, roughly a fingertip once scaled to a phone)
@@ -93,7 +94,7 @@ class RadialMenu:
             else:
                 icon = None
             if icon is not None:
-                icon = pygame.transform.scale_by(icon, 0.85)
+                icon = scale_by(icon, 0.85)
                 if not ok:
                     icon = icon.copy()
                     icon.set_alpha(80)
