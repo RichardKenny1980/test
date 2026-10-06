@@ -147,3 +147,15 @@ def test_counters_matter_bunker_spam_loses():
     pads = [3, 1, 6, 4, 2, 7, 8, 11, 10, 5, 12, 9, 0, 13]
     world = play(build_order=[(i // 2 + 1, "bunker", p) for i, p in enumerate(pads)])
     assert world.lost
+
+
+def test_shifted_map_keeps_spawn_at_screen_edge_and_is_still_winnable():
+    from void_siege.tests.autoplay import play
+
+    world = World(offset_x=80)
+    base = World()
+    assert world.path.points[0] == base.path.points[0]  # enemies still walk in from the left edge
+    assert world.pads[0] == (base.pads[0][0] + 80, base.pads[0][1])
+    assert world.core == (base.core[0] + 80, base.core[1])
+    play(world)
+    assert world.won
