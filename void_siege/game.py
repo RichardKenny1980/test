@@ -1,6 +1,12 @@
-"""Window, main loop and scenes (title menu and battle)."""
+"""Window, main loop and scenes (title menu and battle).
+
+One control scheme for phones and desktops: every action is a tap (or click).
+Keyboard shortcuts exist as extras on desktop.
+"""
+import asyncio
 import math
 import random
+import sys
 
 import pygame
 
@@ -10,9 +16,12 @@ from .render.art import SpriteBank
 from .render.field import FieldRenderer
 from .render.fx import Effects
 from .render.hud import Hud
+from .render.radial import BUILD_ORDER, RadialMenu
 from .settings import FIELD_HEIGHT, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
 
-BUILD_KEYS = {pygame.K_1: "bunker", pygame.K_2: "mortar", pygame.K_3: "cryo", pygame.K_4: "missile"}
+WEB = sys.platform == "emscripten"
+BUILD_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
+PAD_TAP_RADIUS = 16
 
 
 def outlined_text(font, text, color, outline=P.BLACK):
@@ -25,8 +34,20 @@ def outlined_text(font, text, color, outline=P.BLACK):
     return s
 
 
+def is_portrait():
+    """True when a phone browser is held upright. The battlefield needs landscape."""
+    if not WEB:
+        return False
+    try:
+        import platform
+
+        return platform.window.innerHeight > platform.window.innerWidth
+    except (AttributeError, ImportError):
+        return False
+
+
 class Game:
-    def __init__(self, scaled=True):
+    def __init__(self, scaled=not WEB):
         pygame.init()
         pygame.display.set_caption(TITLE)
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED if scaled else 0)
@@ -39,6 +60,8 @@ class Game:
         }
         self.sprites = SpriteBank()
         self.running = True
+        self.portrait = False
+        self._orientation_check = 0
         self.scene = MenuScene(self)
 
     def start_battle(self):
@@ -48,21 +71,41 @@ class Game:
         self.scene = MenuScene(self)
 
     def step(self, dt, events=()):
+        self._orientation_check -= 1
+        if self._orientation_check <= 0:
+            self.portrait = is_portrait()
+            self._orientation_check = 30
         for event in events:
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
                 pygame.display.toggle_fullscreen()
-            else:
+            elif not self.portrait:
                 self.scene.handle(event)
+        if self.portrait:
+            self._rotate_hint()
+            return
         self.scene.update(dt)
         self.scene.draw(self.screen)
 
-    def run(self):
+    def _rotate_hint(self):
+        screen = self.screen
+        screen.fill(P.BLACK)
+        cx, cy = WIDTH // 2, HEIGHT // 2 - 30
+        phone = pygame.Rect(0, 0, 40, 70)
+        phone.center = (cx, cy)
+        pygame.draw.rect(screen, P.STEEL, phone, 3, border_radius=6)
+        pygame.draw.arc(screen, P.HAZARD, phone.inflate(50, 30), 0.3, 1.4, 3)
+        msg = outlined_text(self.fonts["big"], "Rotate your device", P.HAZARD)
+        screen.blit(msg, msg.get_rect(center=(cx, cy + 70)))
+
+    async def run(self):
+        """Main loop. It is async so the same code runs in a phone browser (pygbag) and on desktop."""
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.1)
             self.step(dt, pygame.event.get())
             pygame.display.flip()
+            await asyncio.sleep(0)
         pygame.quit()
 
 
@@ -73,15 +116,15 @@ class MenuScene:
         self.stars = [[rng.uniform(0, WIDTH), rng.uniform(0, HEIGHT), rng.choice((6, 12, 24)),
                        rng.choice((P.WHITE, P.TEAM_BLUE_LIGHT, P.STEEL_LIGHT, P.HAZARD))] for _ in range(160)]
         self.time = 0.0
-        self.button = pygame.Rect(WIDTH // 2 - 60, 220, 120, 26)
+        self.button = pygame.Rect(WIDTH // 2 - 80, 200, 160, 44)
         self.mouse = (0, 0)
         self.sprites = game.sprites
 
     def handle(self, event):
         if event.type == pygame.MOUSEMOTION:
             self.mouse = event.pos
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.button.collidepoint(event.pos):
-            self.game.start_battle()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.game.start_battle()  # tap anywhere to deploy
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
                 self.game.start_battle()
@@ -124,12 +167,12 @@ class MenuScene:
         hover = self.button.collidepoint(self.mouse)
         pygame.draw.rect(screen, P.HAZARD if hover else P.STEEL_DARK, self.button)
         pygame.draw.rect(screen, P.GUNMETAL, self.button.inflate(-4, -4))
-        label = outlined_text(f["normal"], "DEPLOY", P.CRT_GREEN)
+        label = outlined_text(f["big"], "DEPLOY", P.CRT_GREEN)
         screen.blit(label, label.get_rect(center=self.button.center))
 
         help_lines = [
-            "1-4 build  |  click tower to select  |  U upgrade  S sell  T targeting",
-            "SPACE next wave  |  F speed  |  P pause  |  F11 fullscreen",
+            "Tap a pad to build.  Tap a turret to upgrade, sell or aim.",
+            "Tap once to see details, tap again to confirm.",
         ]
         for i, line in enumerate(help_lines):
             img = outlined_text(f["small"], line, P.STEEL_LIGHT)
@@ -138,13 +181,20 @@ class MenuScene:
 
 class UiState:
     def __init__(self):
-        self.build_kind = None
-        self.selected = None
-        self.hover_pad = None
-        self.hover_kind = None
+        self.radial = None    # ring menu open around a pad, if any
+        self.pressed = None   # console button under the finger, for press feedback
         self.mouse = (0, 0)
         self.speed = 1
         self.paused = False
+
+    @property
+    def selected(self):
+        return self.radial.tower if self.radial else None
+
+    @property
+    def preview_kind(self):
+        armed = self.radial.armed if self.radial else None
+        return armed.arg if armed is not None and armed.action == "build" else None
 
 
 class BattleScene:
@@ -157,41 +207,92 @@ class BattleScene:
         self.hud = Hud((game.fonts["normal"], game.fonts["small"]), game.sprites, self.field)
         self.accumulator = 0.0
         self.over_time = 0.0
+        self.overlay_buttons = []
         self.fx.say("Commander, the Hive is moving on the colony.")
-        self.fx.say("Build turrets on the pads. SPACE when ready.")
+        self.fx.say("Tap a pad to build turrets. Tap WAVE when ready.")
 
     # ---- input ------------------------------------------------------------------
 
     def handle(self, event):
-        w, ui = self.world, self.ui
+        ui = self.ui
         if event.type == pygame.MOUSEMOTION:
             ui.mouse = event.pos
+        elif event.type == pygame.MOUSEBUTTONUP:
+            ui.pressed = None
         elif event.type == pygame.KEYDOWN:
             self._key(event)
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if w.over:
+            ui.mouse = event.pos
+            if event.button == 1:
+                self.tap(event.pos)
+            elif event.button == 3:
+                ui.radial = None
+
+    def tap(self, pos):
+        """Everything the player does goes through here: one tap (or click) at a screen position."""
+        w, ui = self.world, self.ui
+        for rect, action in self.overlay_buttons:
+            if rect.collidepoint(pos):
+                action()
                 return
-            if event.button == 3:
-                ui.build_kind = None
-                ui.selected = None
-            elif event.button == 1:
-                if event.pos[1] >= FIELD_HEIGHT:
-                    button = self.hud.button_at(event.pos)
-                    if button:
-                        self.do(*button.action)
-                    return
-                pad = w.pad_at(*event.pos)
-                if ui.build_kind and pad is not None and pad not in w.towers:
-                    tower = w.build(ui.build_kind, pad)
-                    if tower and not pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                        ui.build_kind = None
-                        ui.selected = tower
-                elif pad is not None and pad in w.towers:
-                    ui.selected = w.towers[pad]
-                    ui.build_kind = None
-                else:
-                    ui.selected = None
-                    ui.build_kind = None
+        if w.over or ui.paused and pos[1] < FIELD_HEIGHT:
+            return
+        if pos[1] >= FIELD_HEIGHT:
+            button = self.hud.button_at(pos)
+            if button:
+                ui.pressed = button
+                self.do(*button.action)
+            return
+        if ui.radial is not None:
+            opt = ui.radial.option_at(pos)
+            if opt is not None:
+                self.choose(opt)
+                return
+            ui.radial = None
+        pad = self._pad_near(pos)
+        if pad is not None:
+            ui.radial = RadialMenu(w, pad)
+
+    def _pad_near(self, pos):
+        best, best_d = None, PAD_TAP_RADIUS
+        for i, (px, py) in enumerate(self.world.pads):
+            d = math.hypot(pos[0] - px, pos[1] - py)
+            if d <= best_d:
+                best, best_d = i, d
+        return best
+
+    def choose(self, opt):
+        """First tap on a ring option arms it (shows details); the second tap confirms."""
+        radial = self.ui.radial
+        if opt.confirm and radial.armed is not opt:
+            radial.armed = opt
+            return
+        if not radial.affordable(opt):
+            self.fx.say("Not enough minerals.")
+            return
+        w = self.world
+        if opt.action == "build":
+            w.build(opt.arg, radial.pad)
+            self.ui.radial = None
+        elif opt.action == "upgrade":
+            w.upgrade(radial.tower)
+            self.ui.radial = RadialMenu(w, radial.pad)
+        elif opt.action == "sell":
+            w.sell(radial.tower)
+            self.ui.radial = None
+        elif opt.action == "target":
+            radial.tower.cycle_targeting()
+
+    def _confirm(self, action, arg=None):
+        """Keyboard shortcut: run a ring option immediately, skipping the confirm tap."""
+        radial = self.ui.radial
+        if radial is None:
+            return
+        for opt in radial.options:
+            if opt.action == action and (arg is None or opt.arg == arg):
+                radial.armed = opt
+                self.choose(opt)
+                return
 
     def _key(self, event):
         w, ui, key = self.world, self.ui, event.key
@@ -204,43 +305,31 @@ class BattleScene:
         if ui.paused and key == pygame.K_q:
             self.game.to_menu()
         elif key in BUILD_KEYS:
-            self.do("build", BUILD_KEYS[key])
+            self._confirm("build", BUILD_ORDER[BUILD_KEYS[key]])
         elif key == pygame.K_u:
-            self.do("upgrade")
+            self._confirm("upgrade")
         elif key == pygame.K_s:
-            self.do("sell")
+            self._confirm("sell")
         elif key == pygame.K_t:
-            self.do("target")
+            self._confirm("target")
         elif key == pygame.K_f:
             self.do("speed")
         elif key == pygame.K_SPACE:
             self.do("wave")
         elif key == pygame.K_p:
-            ui.paused = not ui.paused
+            self.do("pause")
         elif key == pygame.K_ESCAPE:
-            if ui.build_kind or ui.selected:
-                ui.build_kind = ui.selected = None
+            if ui.radial:
+                ui.radial = None
             else:
-                ui.paused = not ui.paused
+                self.do("pause")
 
-    def do(self, action, arg=None):
+    def do(self, action):
         w, ui = self.world, self.ui
-        if action == "build":
-            if w.minerals >= w.build_cost(arg):
-                ui.build_kind = None if ui.build_kind == arg else arg
-                ui.selected = None
-            else:
-                self.fx.say("Not enough minerals.")
-        elif action == "upgrade" and ui.selected:
-            if not w.upgrade(ui.selected):
-                self.fx.say("Can't upgrade that." if ui.selected.upgrade_cost is None else "Not enough minerals.")
-        elif action == "sell" and ui.selected:
-            w.sell(ui.selected)
-            ui.selected = None
-        elif action == "target" and ui.selected:
-            ui.selected.cycle_targeting()
-        elif action == "speed":
+        if action == "speed":
             ui.speed = SPEEDS[(SPEEDS.index(ui.speed) + 1) % len(SPEEDS)]
+        elif action == "pause":
+            ui.paused = not ui.paused
         elif action == "wave":
             w.call_wave()
 
@@ -248,13 +337,8 @@ class BattleScene:
 
     def update(self, dt):
         w, ui = self.world, self.ui
-        mx, my = ui.mouse
-        ui.hover_pad = w.pad_at(mx, my) if my < FIELD_HEIGHT else None
-        button = self.hud.button_at(ui.mouse)
-        ui.hover_kind = button.action[1] if button and button.action[0] == "build" else None
-        if ui.selected is not None and ui.selected.pad not in w.towers:
-            ui.selected = None
-
+        if ui.radial is not None and ui.radial.tower is not None and ui.radial.pad not in w.towers:
+            ui.radial = None
         if not ui.paused and not w.over:
             self.accumulator += dt * ui.speed
             ticks = 0
@@ -268,33 +352,37 @@ class BattleScene:
         elif w.over:
             self.over_time += dt
             self.fx.update(dt)
+            ui.radial = None
         for name, data in w.drain_events():
             self.fx.handle(name, data, self.field.ground, self.field.rng, self.field.splat)
         self.fx.update_chatter(dt)
 
     def draw(self, screen):
         screen.fill(P.BLACK)
-        field = self.field.draw(self.fx, self.ui)
+        field = self.field.draw(self.fx, self.ui, self.game.fonts["small"])
         ox, oy = self.fx.shake_offset()
         screen.blit(field, (ox, oy))
         self.hud.draw(screen, self.world, self.ui, 1 / FPS)
         self.hud.draw_chatter(screen, self.fx)
+        self.overlay_buttons = []
         if self.ui.paused and not self.world.over:
-            self._overlay(screen, "PAUSED", "P to resume  |  Q quit to menu", P.HAZARD)
+            self._overlay(screen, "PAUSED", "The Hive waits for no one.", P.HAZARD,
+                          buttons=[("RESUME", lambda: self.do("pause")), ("QUIT", self.game.to_menu)])
         if self.world.over and self.over_time > 0.6:
+            buttons = [("RETRY", self.game.start_battle), ("MENU", self.game.to_menu)]
             if self.world.won:
                 self._overlay(screen, "VICTORY", f"Dustfall Ridge holds.  Kills: {self.world.kills}", P.CRT_GREEN,
-                              stars=self.world.stars)
+                              stars=self.world.stars, buttons=buttons)
             else:
                 self._overlay(screen, "CORE DESTROYED", f"The Hive overran the colony on wave "
-                                                        f"{self.world.waves.index + 1}.", P.RED)
+                                                        f"{self.world.waves.index + 1}.", P.RED, buttons=buttons)
 
-    def _overlay(self, screen, title, subtitle, color, stars=None):
+    def _overlay(self, screen, title, subtitle, color, stars=None, buttons=()):
         f = self.game.fonts
         dim = pygame.Surface((WIDTH, FIELD_HEIGHT), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 140))
         screen.blit(dim, (0, 0))
-        box = pygame.Rect(0, 0, 300, 120 if stars is not None else 96)
+        box = pygame.Rect(0, 0, 300, 150 if stars is not None else 126)
         box.center = (WIDTH // 2, FIELD_HEIGHT // 2)
         pygame.draw.rect(screen, P.STEEL_DARK, box)
         pygame.draw.rect(screen, P.BLACK, box.inflate(-6, -6))
@@ -307,10 +395,15 @@ class BattleScene:
         if stars is not None:
             for i in range(3):
                 self._star(screen, box.centerx - 30 + i * 30, y, i < stars)
-            y += 26
-        if self.world.over:
-            hint = outlined_text(f["small"], "R retry  |  ESC menu", P.CRT_DIM)
-            screen.blit(hint, hint.get_rect(center=(box.centerx, y)))
+            y += 24
+        for i, (label, action) in enumerate(buttons):
+            rect = pygame.Rect(0, 0, 110, 36)
+            rect.center = (box.centerx - 60 + i * 120, y + 16)
+            pygame.draw.rect(screen, P.STEEL_DARK, rect)
+            pygame.draw.rect(screen, P.GUNMETAL, rect.inflate(-4, -4))
+            img = outlined_text(f["normal"], label, P.CRT_GREEN)
+            screen.blit(img, img.get_rect(center=rect.center))
+            self.overlay_buttons.append((rect, action))
 
     def _star(self, screen, x, y, filled):
         pts = []
@@ -323,4 +416,4 @@ class BattleScene:
 
 
 def main():
-    Game().run()
+    asyncio.run(Game().run())

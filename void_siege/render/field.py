@@ -17,17 +17,19 @@ class FieldRenderer:
         self.surface = pygame.Surface((WIDTH, FIELD_HEIGHT))
         self.rng = random.Random(3)
         self.time = 0.0
+        self._shadows = {}
+        self._ranges = {}
 
     def splat(self, rng, radius, flying):
         return goo_splat(rng, radius, flying)
 
-    def draw(self, effects, ui):
+    def draw(self, effects, ui, font):
         w, s, sp = self.world, self.surface, self.sprites
         s.blit(self.ground, (0, 0))
 
         for i, (px, py) in enumerate(w.pads):
             s.blit(sp.pad, sp.pad.get_rect(center=(px, py)))
-            if ui.build_kind and i not in w.towers and i == ui.hover_pad:
+            if ui.radial is not None and i == ui.radial.pad:
                 pygame.draw.rect(s, P.HAZARD, sp.pad.get_rect(center=(px, py)).inflate(2, 2), 1)
 
         core = sp.core[int(self.time * 2) % 2]
@@ -81,22 +83,29 @@ class FieldRenderer:
             if e.targetable and (e.hp < e.max_hp or e.boss):
                 self._health_bar(s, e)
 
-        if ui.selected is not None and ui.selected.pad in w.towers:
-            t = ui.selected
-            self._range(s, t.x, t.y, t.range)
-            pygame.draw.rect(s, P.CRT_GREEN, sp.pad.get_rect(center=(t.x, t.y)).inflate(2, 2), 1)
-        if ui.build_kind and ui.hover_pad is not None and ui.hover_pad not in w.towers:
-            px, py = w.pads[ui.hover_pad]
-            spec = w.tower_specs[ui.build_kind]
-            self._range(s, px, py, spec["tiers"][0]["range"])
-            ghost = sp.icon(ui.build_kind).copy()
-            ghost.set_alpha(150)
-            s.blit(ghost, ghost.get_rect(center=(px, py)))
+        radial = ui.radial
+        if radial is not None:
+            armed = radial.armed
+            px, py = w.pads[radial.pad]
+            tower = radial.tower
+            if tower is not None:
+                r = tower.range
+                if armed is not None and armed.action == "upgrade":
+                    r = tower.spec["tiers"][tower.tier + 1]["range"]
+                self._range(s, px, py, r)
+            elif armed is not None:
+                self._range(s, px, py, w.tower_specs[armed.arg]["tiers"][0]["range"])
+                ghost = sp.icon(armed.arg).copy()
+                ghost.set_alpha(150)
+                s.blit(ghost, ghost.get_rect(center=(px, py)))
+            radial.draw(s, sp, font, self.time)
         return s
 
     def _shadow(self, s, x, y, r):
-        shadow = pygame.Surface((r * 2 + 2, r + 2), pygame.SRCALPHA)
-        pygame.draw.ellipse(shadow, P.SHADOW, shadow.get_rect())
+        shadow = self._shadows.get(r)
+        if shadow is None:
+            shadow = self._shadows[r] = pygame.Surface((r * 2 + 2, r + 2), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow, P.SHADOW, shadow.get_rect())
         s.blit(shadow, shadow.get_rect(center=(int(x), int(y))))
 
     def _frost(self, s, e):
@@ -113,9 +122,11 @@ class FieldRenderer:
         pygame.draw.rect(s, color, (x, y, int(width * ratio), 2))
 
     def _range(self, s, x, y, r):
-        overlay = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
-        pygame.draw.circle(overlay, (*P.TEAM_BLUE, 40), (r + 1, r + 1), r)
-        pygame.draw.circle(overlay, (*P.TEAM_BLUE_LIGHT, 180), (r + 1, r + 1), r, 1)
+        overlay = self._ranges.get(r)
+        if overlay is None:
+            overlay = self._ranges[r] = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(overlay, (*P.TEAM_BLUE, 40), (r + 1, r + 1), r)
+            pygame.draw.circle(overlay, (*P.TEAM_BLUE_LIGHT, 180), (r + 1, r + 1), r, 1)
         s.blit(overlay, (x - r - 1, y - r - 1))
 
     def _projectile(self, s, p):

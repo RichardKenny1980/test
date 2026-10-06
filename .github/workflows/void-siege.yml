@@ -2,9 +2,9 @@ name: Void Siege
 
 on:
   push:
-    paths: ["void_siege/**", ".github/workflows/void-siege.yml"]
+    paths: ["void_siege/**", ".github/workflows/void-siege*.yml"]
   pull_request:
-    paths: ["void_siege/**", ".github/workflows/void-siege.yml"]
+    paths: ["void_siege/**", ".github/workflows/void-siege*.yml"]
 
 jobs:
   test:
@@ -20,3 +20,17 @@ jobs:
       - run: pip install -r void_siege/requirements.txt ruff
       - run: ruff check void_siege --line-length 120
       - run: python -m pytest void_siege -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pygbag
+      - run: python -m void_siege.build_web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: void-siege-web
+          path: build/voidsiege/build/web
