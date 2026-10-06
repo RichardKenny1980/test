@@ -22,6 +22,7 @@ from .settings import FIELD_HEIGHT, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
 WEB = sys.platform == "emscripten"
 BUILD_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
 PAD_TAP_RADIUS = 16
+BACK_KEYS = (pygame.K_ESCAPE, pygame.K_AC_BACK)  # Esc on desktop, the Back button on Android
 
 
 def outlined_text(font, text, color, outline=P.BLACK):
@@ -128,7 +129,7 @@ class MenuScene:
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
                 self.game.start_battle()
-            elif event.key == pygame.K_ESCAPE:
+            elif event.key in BACK_KEYS:
                 self.game.running = False
 
     def update(self, dt):
@@ -299,7 +300,7 @@ class BattleScene:
         if w.over:
             if key == pygame.K_r:
                 self.game.start_battle()
-            elif key in (pygame.K_ESCAPE, pygame.K_m, pygame.K_RETURN):
+            elif key in (*BACK_KEYS, pygame.K_m, pygame.K_RETURN):
                 self.game.to_menu()
             return
         if ui.paused and key == pygame.K_q:
@@ -318,7 +319,7 @@ class BattleScene:
             self.do("wave")
         elif key == pygame.K_p:
             self.do("pause")
-        elif key == pygame.K_ESCAPE:
+        elif key in BACK_KEYS:
             if ui.radial:
                 ui.radial = None
             else:

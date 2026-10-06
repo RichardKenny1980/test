@@ -32,6 +32,12 @@ def shade(color, amount):
     return tuple(max(0, min(255, int(c * amount))) for c in color[:3])
 
 
+def scale_by(surface, factor):
+    """pygame.transform.scale_by, which older pygame (the Android build's 2.1) lacks."""
+    w, h = surface.get_size()
+    return pygame.transform.scale(surface, (max(1, round(w * factor)), max(1, round(h * factor))))
+
+
 def rotations(surface):
     """Pre-rotate a right-facing sprite into FACINGS headings."""
     return [pygame.transform.rotate(surface, -i * 360 / FACINGS) for i in range(FACINGS)]

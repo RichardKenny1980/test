@@ -3,6 +3,7 @@ import pygame
 
 from ..settings import FIELD_HEIGHT, HEIGHT, WIDTH
 from . import palette as P
+from .art import scale_by
 
 TIER_NAMES = ("Mk I", "Mk II", "Mk III")
 INFO_RIGHT = 470
@@ -100,7 +101,7 @@ class Hud:
         if kind is None and ui.selected is not None:
             kind, tier = ui.selected.kind, ui.selected.tier
         if kind:
-            icon = pygame.transform.scale_by(self.sprites.icon(kind, tier), 2)
+            icon = scale_by(self.sprites.icon(kind, tier), 2)
             screen.blit(icon, icon.get_rect(center=area.center))
         else:
             self._pilot(screen, area)
@@ -168,7 +169,7 @@ class Hud:
             ix = x + self._text(screen, "Incoming:", (x, y + 18)) + 6
             for kind, count in waves.preview():
                 img = self.sprites.enemy(kind, self.time, 0)
-                img = pygame.transform.scale_by(img, 0.6) if img.get_width() > 24 else img
+                img = scale_by(img, 0.6) if img.get_width() > 24 else img
                 screen.blit(img, img.get_rect(midleft=(ix, y + 23)))
                 ix += img.get_width() + 2
                 ix += self._text(screen, f"x{count}", (ix, y + 18), P.WHITE) + 8
