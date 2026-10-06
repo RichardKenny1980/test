@@ -13,7 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "build" / "voidsiege"
 
-MAIN = '''import asyncio
+# pygbag decides which wheels to load by scanning main.py, so pygame must be imported here
+# directly; otherwise the browser gets no pygame and the game dies at import.
+MAIN = '''# /// script
+# dependencies = ["pygame-ce"]
+# ///
+import asyncio
+
+import pygame  # noqa: F401
 
 from void_siege.game import Game
 
