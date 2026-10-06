@@ -38,6 +38,18 @@ async def main():
             await page.mouse.click(422, 195)
         await page.wait_for_timeout(5000)
         await page.screenshot(path=str(OUT / "final.png"))
+        # Python's own output goes to the on-page xterm terminal, not the JS console
+        terminal = await page.evaluate("""() => {
+            const rows = document.querySelectorAll('.xterm-rows > div');
+            return Array.from(rows).map(r => r.textContent).join('\\n');
+        }""")
+        canvas = await page.evaluate("""() => {
+            const c = document.querySelector('canvas');
+            if (!c) return 'no canvas';
+            return `canvas ${c.width}x${c.height} css ${c.clientWidth}x${c.clientHeight}`;
+        }""")
+        logs.append("---- terminal ----\n" + terminal)
+        logs.append("---- " + canvas)
         await browser.close()
     text = "\n".join(logs)
     (OUT / "console.txt").write_text(text, encoding="utf-8")
