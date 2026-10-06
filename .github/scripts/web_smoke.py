@@ -46,7 +46,14 @@ async def main():
         canvas = await page.evaluate("""() => {
             const c = document.querySelector('canvas');
             if (!c) return 'no canvas';
-            return `canvas ${c.width}x${c.height} css ${c.clientWidth}x${c.clientHeight}`;
+            const copy = document.createElement('canvas');
+            copy.width = c.width; copy.height = c.height;
+            const ctx = copy.getContext('2d');
+            ctx.drawImage(c, 0, 0);
+            const px = ctx.getImageData(0, 0, c.width, c.height).data;
+            const colors = new Set();
+            for (let i = 0; i < px.length; i += 4 * 97) colors.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+            return `canvas ${c.width}x${c.height} css ${c.clientWidth}x${c.clientHeight} colors=${colors.size}`;
         }""")
         logs.append("---- terminal ----\n" + terminal)
         logs.append("---- " + canvas)
@@ -56,6 +63,9 @@ async def main():
     print(text[-20000:])
     if "Traceback" in text or "Error:" in text:
         sys.exit("Python error in the web build (see console above)")
+    colors = int(canvas.rsplit("colors=", 1)[-1]) if "colors=" in canvas else 0
+    if colors < 20:
+        sys.exit(f"The game canvas looks blank ({canvas})")
 
 
 asyncio.run(main())
