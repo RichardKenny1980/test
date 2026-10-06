@@ -1,0 +1,53 @@
+"""A limited late-90s palette: dusty badlands, gunmetal tech, purple alien hive."""
+
+BLACK = (12, 10, 18)
+OUTLINE = (20, 14, 24)
+SHADOW = (0, 0, 0, 90)
+
+# terrain
+SAND = (176, 138, 88)
+SAND_DARK = (146, 108, 66)
+SAND_LIGHT = (204, 170, 116)
+ROCK = (110, 84, 62)
+ROCK_DARK = (78, 58, 46)
+ROAD = (122, 92, 64)
+ROAD_EDGE = (96, 70, 50)
+CREEP = (92, 44, 96)
+CREEP_DARK = (60, 26, 66)
+CREEP_VEIN = (140, 70, 130)
+
+# human tech
+STEEL = (110, 118, 132)
+STEEL_DARK = (66, 72, 86)
+STEEL_LIGHT = (164, 172, 186)
+GUNMETAL = (52, 56, 66)
+RUST = (170, 86, 40)
+HAZARD = (232, 184, 40)
+TEAM_BLUE = (70, 150, 255)
+TEAM_BLUE_LIGHT = (160, 210, 255)
+CRT_GREEN = (80, 230, 110)
+CRT_DIM = (30, 110, 50)
+CRT_BG = (8, 26, 14)
+
+# aliens
+HIVE_PURPLE = (118, 56, 140)
+HIVE_PURPLE_DARK = (78, 32, 96)
+HIVE_MAROON = (126, 38, 52)
+HIVE_MAROON_DARK = (84, 22, 36)
+BONE = (226, 210, 170)
+BONE_DARK = (170, 150, 110)
+TOXIC = (130, 255, 80)
+GOO = (110, 200, 60)
+GOO_DARK = (60, 120, 40)
+FLESH = (196, 120, 120)
+FLESH_DARK = (140, 76, 86)
+
+# effects
+FLASH = (255, 246, 170)
+FIRE = (255, 150, 40)
+FIRE_DARK = (200, 60, 20)
+CRYO = (120, 230, 255)
+CRYO_LIGHT = (220, 250, 255)
+MINERAL = (90, 200, 255)
+RED = (230, 50, 50)
+WHITE = (240, 240, 240)

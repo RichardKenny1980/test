@@ -1,0 +1,55 @@
+{
+  "bunker": {
+    "name": "Autocannon Bunker",
+    "hotkey": "1",
+    "role": "Fast single-target fire. Hits ground and air.",
+    "targets": ["ground", "air"],
+    "projectile": "bullet",
+    "projectile_speed": 420,
+    "tiers": [
+      {"cost": 60,  "damage": 10, "cooldown": 0.50, "range": 70},
+      {"cost": 70,  "damage": 18, "cooldown": 0.40, "range": 78},
+      {"cost": 120, "damage": 30, "cooldown": 0.30, "range": 86}
+    ]
+  },
+  "mortar": {
+    "name": "Siege Mortar",
+    "hotkey": "2",
+    "role": "Slow armor-piercing splash. Ground only.",
+    "targets": ["ground"],
+    "projectile": "shell",
+    "projectile_speed": 170,
+    "pierce": true,
+    "tiers": [
+      {"cost": 100, "damage": 32, "cooldown": 2.2, "range": 110, "splash": 30},
+      {"cost": 90,  "damage": 55, "cooldown": 2.0, "range": 120, "splash": 34},
+      {"cost": 160, "damage": 95, "cooldown": 1.8, "range": 130, "splash": 40}
+    ]
+  },
+  "cryo": {
+    "name": "Cryo Projector",
+    "hotkey": "3",
+    "role": "Slows enemies. Tier 3 chains the frost.",
+    "targets": ["ground", "air"],
+    "projectile": "beam",
+    "tiers": [
+      {"cost": 80,  "damage": 3, "cooldown": 0.6, "range": 60, "slow": 0.40, "slow_time": 1.5},
+      {"cost": 80,  "damage": 5, "cooldown": 0.5, "range": 66, "slow": 0.50, "slow_time": 1.8},
+      {"cost": 130, "damage": 8, "cooldown": 0.5, "range": 72, "slow": 0.60, "slow_time": 2.0, "chain": 2}
+    ]
+  },
+  "missile": {
+    "name": "Missile Turret",
+    "hotkey": "4",
+    "role": "Heavy anti-air. Reveals burrowed enemies.",
+    "targets": ["air"],
+    "projectile": "missile",
+    "projectile_speed": 230,
+    "detector": true,
+    "tiers": [
+      {"cost": 90,  "damage": 30, "cooldown": 1.0, "range": 100},
+      {"cost": 90,  "damage": 48, "cooldown": 0.9, "range": 110},
+      {"cost": 150, "damage": 75, "cooldown": 0.8, "range": 120}
+    ]
+  }
+}
