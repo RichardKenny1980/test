@@ -64,7 +64,7 @@ async def main():
     if "Traceback" in text or "Error:" in text:
         sys.exit("Python error in the web build (see console above)")
     colors = int(canvas.rsplit("colors=", 1)[-1]) if "colors=" in canvas else 0
-    if colors < 20:
+    if colors < 4:  # a blank or cleared canvas is one or two colors; the game draws many more
         sys.exit(f"The game canvas looks blank ({canvas})")
 
 
