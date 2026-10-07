@@ -1,34 +1,41 @@
 import os
 
-BASE_WIDTH, HEIGHT = 640, 360     # low-res render target, scaled up to the window
-FIELD_HEIGHT = 280                # playfield above the console panel
+MAP_WIDTH, MAP_HEIGHT = 640, 280  # the battlefield layout in data/*.json
 FPS = 60
 SPEEDS = (1, 2, 3)
 TITLE = "Void Siege"
 ANDROID = "ANDROID_ARGUMENT" in os.environ  # set by python-for-android's launcher
+DEFAULT_ASPECT = 20 / 9           # a typical phone held sideways
 
 
-def _screen_width():
-    """Widen the canvas to the phone's shape so the game fills the screen instead of being letterboxed.
-
-    The canvas is always HEIGHT pixels tall; a 20:9 phone gets a canvas about 800 wide. The map keeps
-    its 640-wide layout and is centred (FIELD_X), with extra terrain painted either side.
-    """
-    forced = os.environ.get("VOID_SIEGE_WIDTH")
+def _aspect():
+    forced = os.environ.get("VOID_SIEGE_ASPECT")
     if forced:
-        return max(BASE_WIDTH, int(forced))
+        return float(forced)
     if not ANDROID:
-        return BASE_WIDTH
+        return DEFAULT_ASPECT
     import pygame
 
     pygame.display.init()
     info = pygame.display.Info()
     long_side, short_side = max(info.current_w, info.current_h), min(info.current_w, info.current_h)
-    if short_side <= 0:
-        return BASE_WIDTH
-    width = round(HEIGHT * long_side / short_side / 2) * 2
-    return min(max(width, BASE_WIDTH), 900)
+    return long_side / short_side if short_side > 0 else DEFAULT_ASPECT
 
 
-WIDTH = _screen_width()
-FIELD_X = (WIDTH - BASE_WIDTH) // 2
+def _canvas(aspect):
+    """The smallest canvas with the screen's shape that still holds the whole map.
+
+    The battlefield is the whole screen (no console panel), so the smaller this canvas is,
+    the bigger everything looks once it is scaled up to the phone. Leftover space on a
+    taller or wider screen becomes extra terrain around the centred map.
+    """
+    aspect = min(max(aspect, 4 / 3), 3.0)
+    width = max(MAP_WIDTH, round(MAP_HEIGHT * aspect))
+    height = max(MAP_HEIGHT, round(width / aspect))
+    return width + width % 2, height + height % 2
+
+
+WIDTH, HEIGHT = _canvas(_aspect())
+FIELD_HEIGHT = HEIGHT             # the battlefield fills the canvas
+FIELD_X = (WIDTH - MAP_WIDTH) // 2
+FIELD_Y = (HEIGHT - MAP_HEIGHT) // 2
