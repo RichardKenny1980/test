@@ -1,12 +1,12 @@
-"""The StarCraft-style console along the bottom, plus the resource bar along the top."""
+"""Everything drawn over the battlefield: the resource bar, the floating control buttons and the
+details card for the ring menu. There is no console panel, so the battlefield fills the screen."""
 import pygame
 
-from ..settings import FIELD_HEIGHT, HEIGHT, WIDTH
+from ..settings import HEIGHT, WIDTH
 from . import palette as P
-from .art import scale_by
 
 TIER_NAMES = ("Mk I", "Mk II", "Mk III")
-INFO_RIGHT = WIDTH - 170  # the info panel stretches; the big buttons stay at the right edge
+CARD_W, CARD_H = 250, 74
 
 
 class Button:
@@ -18,12 +18,12 @@ class Button:
 
 
 def make_buttons():
-    """Big console buttons, sized for thumbs."""
-    y = FIELD_HEIGHT + 5
+    """Big thumb buttons in the bottom-left corner, which the map keeps clear of pads and road."""
+    y = HEIGHT - 40
     return [
-        Button((WIDTH - 166, y, 78, 34), ("speed",), "1x", "F"),
-        Button((WIDTH - 166, y + 37, 78, 34), ("pause",), "PAUSE", "P"),
-        Button((WIDTH - 84, y, 80, 71), ("wave",), "WAVE", "SPACE"),
+        Button((4, y, 64, 36), ("wave",), "WAVE", "SPACE"),
+        Button((72, y, 44, 36), ("speed",), "1x", "F"),
+        Button((120, y, 44, 36), ("pause",), "II", "P"),
     ]
 
 
@@ -33,10 +33,7 @@ class Hud:
         self.sprites = sprites
         self.field = field_renderer
         self.buttons = make_buttons()
-        self.frame = self._console_frame()
         self.time = 0.0
-        self._mini = None
-        self._mini_age = 99.0
 
     def button_at(self, pos):
         for b in self.buttons:
@@ -46,87 +43,36 @@ class Hud:
 
     # ---- drawing ---------------------------------------------------------------
 
-    def _console_frame(self):
-        s = pygame.Surface((WIDTH, HEIGHT - FIELD_HEIGHT))
-        s.fill(P.GUNMETAL)
-        pygame.draw.rect(s, P.STEEL_DARK, (0, 0, WIDTH, 3))
-        pygame.draw.line(s, P.STEEL_LIGHT, (0, 0), (WIDTH, 0))
-        for i in range(0, WIDTH, 10):  # hazard trim
-            pygame.draw.line(s, P.HAZARD, (i, 4), (i + 4, 0))
-        for x in range(4, WIDTH, 40):
-            for y in (8, HEIGHT - FIELD_HEIGHT - 5):
-                pygame.draw.circle(s, P.STEEL_DARK, (x, y), 2)
-                s.set_at((x - 1, y - 1), P.STEEL_LIGHT)
-        for rect in ((6, 6, 116, 70), (128, 6, 60, 70), (192, 6, INFO_RIGHT - 192, 70)):
-            r = pygame.Rect(rect)
-            pygame.draw.rect(s, P.BLACK, r)
-            pygame.draw.rect(s, P.STEEL_DARK, r, 2)
-            pygame.draw.line(s, P.STEEL_LIGHT, r.bottomleft, r.bottomright)
-        return s
-
     def draw(self, screen, world, ui, dt):
         self.time += dt
-        screen.blit(self.frame, (0, FIELD_HEIGHT))
-        self._minimap(screen, world)
-        self._portrait(screen, world, ui)
-        self._info(screen, world, ui)
-        self._command_card(screen, world, ui)
+        self._buttons(screen, world, ui)
         self._top_bar(screen, world, ui)
+        if ui.radial is not None:
+            self._card(screen, world, ui)
 
     def _text(self, screen, text, pos, color=P.CRT_GREEN, font=None):
         img = (font or self.small).render(text, False, color)
         screen.blit(img, pos)
         return img.get_width()
 
-    def _minimap(self, screen, world):
-        area = pygame.Rect(8, FIELD_HEIGHT + 14, 112, 49)
-        self._mini_age += 1
-        if self._mini is None or self._mini_age > 30:  # the ground only changes when decals land
-            self._mini = pygame.transform.smoothscale(self.field.ground, area.size)
-            self._mini_age = 0
-        screen.blit(self._mini, area)
-        sx, sy = area.w / WIDTH, area.h / FIELD_HEIGHT
-        for t in world.towers.values():
-            screen.fill(P.TEAM_BLUE_LIGHT, (area.x + t.x * sx - 1, area.y + t.y * sy - 1, 2, 2))
-        for e in world.enemies:
-            if e.targetable:
-                screen.fill(P.RED, (area.x + e.x * sx, area.y + e.y * sy, 2 if e.boss else 1, 2 if e.boss else 1))
-        pygame.draw.rect(screen, P.CRT_DIM, area, 1)
-        self._text(screen, "TACTICAL", (10, FIELD_HEIGHT + 66), P.CRT_DIM)
+    def _panel(self, screen, rect, alpha=200):
+        bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+        bg.fill((8, 10, 14, alpha))
+        screen.blit(bg, rect)
+        pygame.draw.rect(screen, P.STEEL_DARK, rect, 1)
 
-    def _portrait(self, screen, world, ui):
-        area = pygame.Rect(130, FIELD_HEIGHT + 8, 56, 66)
-        pygame.draw.rect(screen, P.CRT_BG, area)
-        kind, tier = ui.preview_kind, 0
-        if kind is None and ui.selected is not None:
-            kind, tier = ui.selected.kind, ui.selected.tier
-        if kind:
-            icon = scale_by(self.sprites.icon(kind, tier), 2)
-            screen.blit(icon, icon.get_rect(center=area.center))
-        else:
-            self._pilot(screen, area)
-        tint = pygame.Surface(area.size, pygame.SRCALPHA)
-        tint.fill((*P.CRT_GREEN, 40))
-        for y in range(0, area.h, 2):
-            pygame.draw.line(tint, (0, 0, 0, 90), (0, y), (area.w, y))
-        screen.blit(tint, area)
-        pygame.draw.rect(screen, P.CRT_DIM, area, 1)
-
-    def _pilot(self, screen, area):
-        cx, cy = area.centerx, area.centery + 6
-        talk = int(self.time * 6) % 3
-        pygame.draw.rect(screen, P.STEEL_DARK, (cx - 18, cy + 12, 36, 14))  # shoulders
-        pygame.draw.ellipse(screen, P.STEEL, (cx - 14, cy - 20, 28, 34))   # helmet
-        pygame.draw.ellipse(screen, P.STEEL_LIGHT, (cx - 10, cy - 18, 12, 8))
-        pygame.draw.rect(screen, P.TEAM_BLUE, (cx - 10, cy - 6, 20, 7))    # visor
-        pygame.draw.line(screen, P.TEAM_BLUE_LIGHT, (cx - 8, cy - 5), (cx + 2, cy - 5))
-        pygame.draw.rect(screen, P.GUNMETAL, (cx - 5, cy + 5, 10, 2 + talk))  # mouth grille
-
-    def _info(self, screen, world, ui):
-        x, y = 198, FIELD_HEIGHT + 8
+    def _card(self, screen, world, ui):
+        """Details for the ring menu, on the side of the screen away from the ring."""
         radial = ui.radial
-        armed = radial.armed if radial else None
-        if radial is not None and radial.tower is None:
+        x = WIDTH - CARD_W - 4 if radial.cx < WIDTH // 2 else 4
+        y = 20 if radial.cx < WIDTH // 2 else 34  # below the resource bar / the radio chatter
+        self._panel(screen, pygame.Rect(x, y, CARD_W, CARD_H))
+        self._info(screen, world, ui, x + 6, y + 4, x + CARD_W - 6)
+
+    def _info(self, screen, world, ui, x, y, right):
+        radial = ui.radial
+        armed = radial.armed
+        if radial.tower is None:
             if armed is None:
                 self._text(screen, "BUILD A TURRET", (x, y), P.WHITE, self.font)
                 self._text(screen, "Tap a turret for its details.", (x, y + 18))
@@ -136,54 +82,31 @@ class Hud:
             spec = world.tower_specs[armed.arg]
             st = spec["tiers"][0]
             self._text(screen, spec["name"].upper(), (x, y), P.WHITE, self.font)
-            self._cost(screen, st["cost"], (INFO_RIGHT - 40, y + 3), world.minerals >= st["cost"])
+            self._cost(screen, st["cost"], (right - 40, y + 3), world.minerals >= st["cost"])
             self._text(screen, spec["role"], (x, y + 18))
             self._stats(screen, spec, st, (x, y + 30))
             self._text(screen, self._traits(spec), (x, y + 42), P.CRT_DIM)
             hint = "Tap again to build." if radial.affordable(armed) else "Not enough minerals."
             self._text(screen, hint, (x, y + 54), P.HAZARD if radial.affordable(armed) else P.RED)
             return
-        t = ui.selected
-        if t is not None:
-            spec = t.spec
-            self._text(screen, f"{spec['name'].upper()}  {TIER_NAMES[t.tier]}", (x, y), P.WHITE, self.font)
-            self._stats(screen, spec, t.stats, (x, y + 18))
-            self._text(screen, f"Targeting: {t.targeting.upper()}", (x, y + 30))
-            if armed is not None and armed.action == "upgrade":
-                nxt = spec["tiers"][t.tier + 1]
-                w = self._text(screen, f"{TIER_NAMES[t.tier + 1]}:", (x, y + 42), P.HAZARD)
-                self._stats(screen, spec, nxt, (x + w + 4, y + 42))
-                ok = world.minerals >= t.upgrade_cost
-                self._text(screen, "Tap again to upgrade." if ok else "Not enough minerals.", (x, y + 54),
-                           P.HAZARD if ok else P.RED)
-            elif armed is not None and armed.action == "sell":
-                self._text(screen, f"Tap again to sell for {t.sell_value}.", (x, y + 54), P.HAZARD)
-            elif t.upgrade_cost is None:
-                self._text(screen, "Fully upgraded.", (x, y + 42), P.HAZARD)
-            else:
-                self._text(screen, self._traits(spec), (x, y + 42), P.CRT_DIM)
-            return
-        waves = world.waves
-        self._text(screen, f"WAVE {max(0, waves.index + 1)} / {waves.total}", (x, y), P.WHITE, self.font)
-        if waves.has_next:
-            ix = x + self._text(screen, "Incoming:", (x, y + 18)) + 6
-            for kind, count in waves.preview():
-                img = self.sprites.enemy(kind, self.time, 0)
-                img = scale_by(img, 0.6) if img.get_width() > 24 else img
-                screen.blit(img, img.get_rect(midleft=(ix, y + 23)))
-                ix += img.get_width() + 2
-                ix += self._text(screen, f"x{count}", (ix, y + 18), P.WHITE) + 8
-            if waves.index < 0:
-                self._text(screen, "Tap a pad to build turrets.", (x, y + 32), P.CRT_DIM)
-                self._text(screen, "Tap WAVE when you're ready.", (x, y + 43), P.CRT_DIM)
-            elif waves.countdown is not None:
-                self._text(screen, f"Next wave in {int(waves.countdown) + 1}s.", (x, y + 32), P.HAZARD)
-                self._text(screen, f"Call it early for +{int(waves.countdown)} bonus.", (x, y + 43), P.HAZARD)
-            else:
-                self._text(screen, "Enemies still deploying...", (x, y + 32), P.CRT_DIM)
+        t = radial.tower
+        spec = t.spec
+        self._text(screen, f"{spec['name'].upper()}  {TIER_NAMES[t.tier]}", (x, y), P.WHITE, self.font)
+        self._stats(screen, spec, t.stats, (x, y + 18))
+        self._text(screen, f"Targeting: {t.targeting.upper()}", (x, y + 30))
+        if armed is not None and armed.action == "upgrade":
+            nxt = spec["tiers"][t.tier + 1]
+            w = self._text(screen, f"{TIER_NAMES[t.tier + 1]}:", (x, y + 42), P.HAZARD)
+            self._stats(screen, spec, nxt, (x + w + 4, y + 42))
+            ok = world.minerals >= t.upgrade_cost
+            self._text(screen, "Tap again to upgrade." if ok else "Not enough minerals.", (x, y + 54),
+                       P.HAZARD if ok else P.RED)
+        elif armed is not None and armed.action == "sell":
+            self._text(screen, f"Tap again to sell for {t.sell_value}.", (x, y + 54), P.HAZARD)
+        elif t.upgrade_cost is None:
+            self._text(screen, "Fully upgraded.", (x, y + 42), P.HAZARD)
         else:
-            self._text(screen, "Final wave! Clear the field.", (x, y + 18), P.HAZARD)
-        self._text(screen, f"Kills: {world.kills}", (x, y + 54), P.CRT_DIM)
+            self._text(screen, self._traits(spec), (x, y + 42), P.CRT_DIM)
 
     def _traits(self, spec):
         traits = ["Hits " + " + ".join(t.upper() for t in spec["targets"])]
@@ -208,38 +131,39 @@ class Hud:
         screen.blit(self.sprites.mineral, pos)
         return self._text(screen, str(cost), (pos[0] + 11, pos[1] + 1), P.MINERAL if affordable else P.RED)
 
-    def _command_card(self, screen, world, ui):
+    def _buttons(self, screen, world, ui):
+        waves = world.waves
         for b in self.buttons:
             act = b.action[0]
-            enabled, active, label = True, False, b.label
+            enabled, active, label, sub = True, False, b.label, ""
             if act == "speed":
-                label = f"{ui.speed}x SPEED"
+                label = f"{ui.speed}x"
             elif act == "pause":
-                label = "RESUME" if ui.paused else "PAUSE"
+                label = ">" if ui.paused else "II"
                 active = ui.paused
             elif act == "wave":
-                enabled = world.waves.can_call
-                active = enabled and int(self.time * 2) % 2 == 0 and world.waves.index < 0
+                enabled = waves.can_call
+                active = enabled and int(self.time * 2) % 2 == 0 and waves.index < 0
+                if not enabled:
+                    sub = ""
+                elif waves.index < 0:
+                    sub = "START"
+                elif waves.countdown is not None:
+                    sub = f"{int(waves.countdown) + 1}s"
             r = b.rect
             pressed = ui.pressed is b
-            pygame.draw.rect(screen, P.HAZARD if active else P.STEEL_DARK, r)
-            pygame.draw.rect(screen, P.STEEL if pressed else P.GUNMETAL, r.inflate(-4, -4))
+            frame = pygame.Surface(r.size, pygame.SRCALPHA)
+            frame.fill((*(P.HAZARD if active else P.STEEL_DARK), 230))
+            pygame.draw.rect(frame, (*(P.STEEL if pressed else P.GUNMETAL), 215), frame.get_rect().inflate(-4, -4))
+            screen.blit(frame, r)
             pygame.draw.line(screen, P.STEEL_LIGHT, (r.x + 2, r.y + 2), (r.right - 3, r.y + 2))
             color = P.CRT_GREEN if enabled else P.STEEL_DARK
-            if act == "wave":
-                img = self.font.render(label, False, color)
-                screen.blit(img, img.get_rect(center=(r.centerx, r.centery - 8)))
-                sub = "CALL EARLY" if world.waves.countdown is not None else (
-                    "START" if world.waves.index < 0 else "")
-                if sub and enabled:
-                    img = self.small.render(sub, False, P.HAZARD)
-                    screen.blit(img, img.get_rect(center=(r.centerx, r.centery + 8)))
-                for i in range(3):  # chevrons
-                    cx = r.centerx - 8 + i * 8
-                    pygame.draw.polygon(screen, color, [(cx, r.bottom - 14), (cx + 4, r.bottom - 10),
-                                                        (cx, r.bottom - 6)])
+            img = self.font.render(label, False, color)
+            if sub:
+                screen.blit(img, img.get_rect(center=(r.centerx, r.centery - 6)))
+                img = self.small.render(sub, False, P.HAZARD)
+                screen.blit(img, img.get_rect(center=(r.centerx, r.centery + 9)))
             else:
-                img = self.small.render(label, False, color)
                 screen.blit(img, img.get_rect(center=r.center))
 
     def _top_bar(self, screen, world, ui):

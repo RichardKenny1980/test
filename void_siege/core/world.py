@@ -69,26 +69,26 @@ class WaveManager:
         return spawns
 
 
-def shift_map(m, dx):
-    """Move a map right by dx (to centre it on a wider screen). A path that starts off the left edge
+def shift_map(m, dx, dy=0):
+    """Move a map by (dx, dy) to centre it on a bigger screen. A path that starts off the left edge
     still starts there, so enemies keep walking in from the edge of the screen."""
     m = dict(m)
-    path = [[x + dx, y] for x, y in m["path"]]
+    path = [[x + dx, y + dy] for x, y in m["path"]]
     if m["path"][0][0] < 0:
         path[0][0] = m["path"][0][0]
     m["path"] = path
-    m["pads"] = [[x + dx, y] for x, y in m["pads"]]
-    m["core"] = [m["core"][0] + dx, m["core"][1]]
+    m["pads"] = [[x + dx, y + dy] for x, y in m["pads"]]
+    m["core"] = [m["core"][0] + dx, m["core"][1] + dy]
     return m
 
 
 class World:
     """The whole battle simulation. Call update() at a fixed tick rate."""
 
-    def __init__(self, map_name="map01", offset_x=0):
+    def __init__(self, map_name="map01", offset_x=0, offset_y=0):
         self.tower_specs, self.enemy_specs, self.map = load_all(map_name)
-        if offset_x:
-            self.map = shift_map(self.map, offset_x)
+        if offset_x or offset_y:
+            self.map = shift_map(self.map, offset_x, offset_y)
         self.path = Path(self.map["path"])
         self.flight_path = Path([self.map["path"][0], self.map["path"][-1]])
         self.pads = [tuple(p) for p in self.map["pads"]]

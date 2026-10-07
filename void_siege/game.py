@@ -17,7 +17,7 @@ from .render.field import FieldRenderer
 from .render.fx import Effects
 from .render.hud import Hud
 from .render.radial import BUILD_ORDER, RadialMenu
-from .settings import ANDROID, FIELD_HEIGHT, FIELD_X, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
+from .settings import ANDROID, FIELD_HEIGHT, FIELD_X, FIELD_Y, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
 
 WEB = sys.platform == "emscripten"
 BUILD_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
@@ -120,7 +120,7 @@ class MenuScene:
         self.stars = [[rng.uniform(0, WIDTH), rng.uniform(0, HEIGHT), rng.choice((6, 12, 24)),
                        rng.choice((P.WHITE, P.TEAM_BLUE_LIGHT, P.STEEL_LIGHT, P.HAZARD))] for _ in range(160)]
         self.time = 0.0
-        self.button = pygame.Rect(WIDTH // 2 - 80, 200, 160, 44)
+        self.button = pygame.Rect(WIDTH // 2 - 80, HEIGHT // 2 + 30, 160, 44)
         self.mouse = (0, 0)
         self.sprites = game.sprites
 
@@ -148,7 +148,7 @@ class MenuScene:
         for x, y, speed, color in self.stars:
             screen.set_at((int(x), int(y)), color if speed > 6 else P.STEEL_DARK)
         # the frontier moon
-        cx, cy = WIDTH - 140, 300
+        cx, cy = WIDTH - 140, HEIGHT - 40
         pygame.draw.circle(screen, P.SAND_DARK, (cx, cy), 150)
         pygame.draw.circle(screen, P.SAND, (cx - 10, cy - 10), 140)
         for ox, oy, r in ((-60, -90, 18), (20, -110, 10), (-110, -30, 12), (40, -60, 24)):
@@ -159,14 +159,14 @@ class MenuScene:
         # a few hive critters crawling across the title
         for i, kind in enumerate(("skitterling", "skitterling", "spine_brute", "gloomwing")):
             x = (self.time * 30 + i * 70) % (WIDTH + 80) - 40
-            y = 180 + (i % 2) * 10 if kind != "gloomwing" else 150 + math.sin(self.time * 2) * 6
+            y = HEIGHT // 2 + (i % 2) * 10 if kind != "gloomwing" else HEIGHT // 2 - 30 + math.sin(self.time * 2) * 6
             img = self.sprites.enemy(kind, self.time, 0)
             screen.blit(img, img.get_rect(center=(int(x), int(y))))
 
         title = outlined_text(f["title"], "VOID SIEGE", P.HAZARD, P.RUST)
-        screen.blit(title, title.get_rect(center=(WIDTH // 2, 80)))
+        screen.blit(title, title.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 80)))
         sub = outlined_text(f["normal"], "Hold Dustfall Ridge against the Skrell Hive", P.TEAM_BLUE_LIGHT)
-        screen.blit(sub, sub.get_rect(center=(WIDTH // 2, 118)))
+        screen.blit(sub, sub.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 42)))
 
         hover = self.button.collidepoint(self.mouse)
         pygame.draw.rect(screen, P.HAZARD if hover else P.STEEL_DARK, self.button)
@@ -180,13 +180,13 @@ class MenuScene:
         ]
         for i, line in enumerate(help_lines):
             img = outlined_text(f["small"], line, P.STEEL_LIGHT)
-            screen.blit(img, img.get_rect(center=(WIDTH // 2, 300 + i * 14)))
+            screen.blit(img, img.get_rect(center=(WIDTH // 2, HEIGHT - 34 + i * 14)))
 
 
 class UiState:
     def __init__(self):
         self.radial = None    # ring menu open around a pad, if any
-        self.pressed = None   # console button under the finger, for press feedback
+        self.pressed = None   # control button under the finger, for press feedback
         self.mouse = (0, 0)
         self.speed = 1
         self.paused = False
@@ -204,7 +204,7 @@ class UiState:
 class BattleScene:
     def __init__(self, game, map_name="map01"):
         self.game = game
-        self.world = World(map_name, offset_x=FIELD_X)
+        self.world = World(map_name, offset_x=FIELD_X, offset_y=FIELD_Y)
         self.ui = UiState()
         self.field = FieldRenderer(self.world, game.sprites)
         self.fx = Effects(game.fonts["small"])
@@ -239,20 +239,21 @@ class BattleScene:
             if rect.collidepoint(pos):
                 action()
                 return
-        if w.over or ui.paused and pos[1] < FIELD_HEIGHT:
+        if w.over:
             return
-        if pos[1] >= FIELD_HEIGHT:
-            button = self.hud.button_at(pos)
-            if button:
-                ui.pressed = button
-                self.do(*button.action)
-            return
-        if ui.radial is not None:
+        if ui.radial is not None and not ui.paused:  # an open ring sits above the corner buttons
             opt = ui.radial.option_at(pos)
             if opt is not None:
                 self.choose(opt)
                 return
-            ui.radial = None
+        button = self.hud.button_at(pos)
+        if button:
+            ui.pressed = button
+            self.do(*button.action)
+            return
+        if ui.paused:
+            return
+        ui.radial = None
         pad = self._pad_near(pos)
         if pad is not None:
             ui.radial = RadialMenu(w, pad)

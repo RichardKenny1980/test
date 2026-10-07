@@ -8,7 +8,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 pygame = pytest.importorskip("pygame")
 
 from void_siege.game import BattleScene, Game, MenuScene
-from void_siege.settings import WIDTH
+from void_siege.settings import HEIGHT, WIDTH
 
 
 def key(k):
@@ -97,7 +97,7 @@ def test_ring_menu_stays_on_screen_near_edges(game):
         game.step(1 / 60, tap((330, 60)) + tap(world.pads[pad]))
         for opt in scene.ui.radial.options:
             assert 0 <= opt.x - 17 and opt.x + 17 <= WIDTH
-            assert 0 <= opt.y - 17 and opt.y + 17 <= 280
+            assert 0 <= opt.y - 17 and opt.y + 17 <= HEIGHT
 
 
 def test_keyboard_shortcuts_still_work(game):
