@@ -32,8 +32,8 @@ class Effects:
         surf = self.font.render(text, False, color)
         self.texts.append([surf, x - surf.get_width() / 2, y, 0.9])
 
-    def say(self, text):
-        self.chatter.append([text, 3.0])
+    def say(self, text, seconds=3.0):
+        self.chatter.append([text, seconds])
         del self.chatter[:-3]
 
     def add_shake(self, amount):

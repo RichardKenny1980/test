@@ -125,3 +125,15 @@ def test_game_over_buttons(game):
     menu = game.scene.overlay_buttons[1][0]
     game.step(1 / 60, tap(menu.center))
     assert isinstance(game.scene, MenuScene)
+
+
+def test_radio_explains_flyers_and_burrowers_on_first_sight(game):
+    game.start_battle()
+    scene, world = game.scene, game.scene.world
+    world.spawn("burrower")
+    game.step(1 / 60)
+    said = " ".join(text for text, _ in scene.fx.chatter)
+    assert "Missile Battery" in said
+    world.spawn("burrower")
+    game.step(1 / 60)
+    assert sum("Missile Battery" in text for text, _ in scene.fx.chatter) == 1  # only warned once
