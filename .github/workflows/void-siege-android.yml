@@ -33,8 +33,19 @@ jobs:
           path: |
             ~/.buildozer
             build/android/.buildozer
-          key: buildozer-${{ hashFiles('void_siege/android/buildozer.spec') }}
+          key: buildozer-v2-${{ hashFiles('void_siege/android/buildozer.spec', '.github/workflows/void-siege-android.yml') }}
       - run: python -m void_siege.build_android
+      - name: Patch python-for-android's Gradle repositories
+        # The pinned p4a release resolves Gradle plugins from jcenter, which no longer serves them.
+        # Use our own checkout of that release with jcenter swapped for Maven Central.
+        run: |
+          P4A="$PWD/build/p4a"
+          [ -d "$P4A" ] || git clone --quiet --depth 1 --branch "$(sed -n 's/^p4a.branch = //p' void_siege/android/buildozer.spec)" \
+            https://github.com/kivy/python-for-android "$P4A"
+          grep -rl 'jcenter()' "$P4A/pythonforandroid/bootstraps" | xargs -r sed -i 's/jcenter()/mavenCentral()/'
+          if grep -r 'jcenter()' "$P4A/pythonforandroid/bootstraps"; then exit 1; fi
+          sed -i "s|^p4a.branch = .*|&\np4a.source_dir = $P4A|" build/android/buildozer.spec
+          grep -n '^p4a' build/android/buildozer.spec
       - name: Build APK
         working-directory: build/android
         run: yes | buildozer -v android debug
