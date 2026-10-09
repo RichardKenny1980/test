@@ -22,6 +22,12 @@ from .settings import ANDROID, FIELD_HEIGHT, FIELD_X, FIELD_Y, FPS, HEIGHT, SPEE
 WEB = sys.platform == "emscripten"
 BUILD_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
 PAD_TAP_RADIUS = 16
+THREAT_TIPS = {
+    "gloomwing": ("Gloomwings incoming! They fly over the road.",
+                  "Mortars can't hit flyers. Use Bunkers, Cryo or Missiles."),
+    "burrower": ("Burrowers! They tunnel underground and can't be targeted.",
+                 "A Missile Battery's radar reveals them so every turret can fire."),
+}
 BACK_KEYS = (pygame.K_ESCAPE, pygame.K_AC_BACK)  # Esc on desktop, the Back button on Android
 
 
@@ -214,6 +220,7 @@ class BattleScene:
         self.overlay_buttons = []
         self.fx.say("Commander, the Hive is moving on the colony.")
         self.fx.say("Tap a pad to build turrets. Tap WAVE when ready.")
+        self.warned = set()
 
     # ---- input ------------------------------------------------------------------
 
@@ -360,7 +367,17 @@ class BattleScene:
             ui.radial = None
         for name, data in w.drain_events():
             self.fx.handle(name, data, self.field.ground, self.field.rng, self.field.splat)
+        self._warn_new_threats()
         self.fx.update_chatter(dt)
+
+    def _warn_new_threats(self):
+        """The first time a flyer or a burrower shows up, tell the player which turrets can deal with it."""
+        for e in self.world.enemies:
+            kind = e.kind
+            if kind in THREAT_TIPS and kind not in self.warned:
+                self.warned.add(kind)
+                for line in THREAT_TIPS[kind]:
+                    self.fx.say(line, seconds=7.0)  # long enough to read mid-fight
 
     def draw(self, screen):
         screen.fill(P.BLACK)
