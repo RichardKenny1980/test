@@ -19,11 +19,13 @@ class Enemy:
     x: float = 0.0
     y: float = 0.0
     heading: float = 0.0
+    travelled: float = 0.0  # total distance walked; unlike `distance` it survives a maze reroute
 
     def __post_init__(self):
         if not self.hp:
             self.hp = self.stats["hp"]
-        self.max_hp = self.stats["hp"]
+        self.max_hp = self.hp
+        self.travelled = self.distance
         self.spawn_timer = self.stats.get("spawn_every", 0.0)
         self._update_position()
 
@@ -75,6 +77,7 @@ class Enemy:
             if self.slow_timer <= 0:
                 self.slow = 0.0
         self.distance += self.speed * dt
+        self.travelled += self.speed * dt
         self._update_position()
 
     def _update_position(self):

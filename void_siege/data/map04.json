@@ -1,0 +1,25 @@
+{
+  "name": "Glass Basin",
+  "kind": "maze",
+  "intro": ["There is no road here. The Hive walks straight at the core.", "Build turrets to wall them in. They will always find a way through."],
+  "start_minerals": 260,
+  "core_hp": 20,
+  "hp_scale": 1.1,
+  "wave_gap": 20,
+  "wave_bonus": 25,
+  "wave_bonus_step": 5,
+  "spawn": [-16, 150],
+  "core": [610, 150],
+  "waves": [
+    [{"enemy": "skitterling", "count": 10, "interval": 0.9}],
+    [{"enemy": "skitterling", "count": 14, "interval": 0.6}, {"enemy": "spine_brute", "count": 2, "interval": 3.0, "delay": 4}],
+    [{"enemy": "carapace_crawler", "count": 6, "interval": 1.5}, {"enemy": "skitterling", "count": 10, "interval": 0.5, "delay": 2}],
+    [{"enemy": "gloomwing", "count": 8, "interval": 1.2}, {"enemy": "skitterling", "count": 12, "interval": 0.5, "delay": 3}],
+    [{"enemy": "spine_brute", "count": 4, "interval": 2.0}, {"enemy": "carapace_crawler", "count": 6, "interval": 1.2, "delay": 2}, {"enemy": "gloomwing", "count": 6, "interval": 1.5, "delay": 5}],
+    [{"enemy": "burrower", "count": 6, "interval": 1.4}, {"enemy": "skitterling", "count": 15, "interval": 0.4, "delay": 3}],
+    [{"enemy": "skitterling", "count": 25, "interval": 0.3}, {"enemy": "carapace_crawler", "count": 6, "interval": 1.0, "delay": 3}, {"enemy": "spine_brute", "count": 4, "interval": 2.5, "delay": 6}],
+    [{"enemy": "gloomwing", "count": 10, "interval": 0.8}, {"enemy": "burrower", "count": 8, "interval": 1.0, "delay": 2}],
+    [{"enemy": "spine_brute", "count": 8, "interval": 1.6}, {"enemy": "carapace_crawler", "count": 10, "interval": 0.8, "delay": 2}, {"enemy": "skitterling", "count": 20, "interval": 0.3, "delay": 6}, {"enemy": "gloomwing", "count": 6, "interval": 1.0, "delay": 8}],
+    [{"enemy": "hive_titan", "count": 1, "interval": 1}, {"enemy": "skitterling", "count": 20, "interval": 0.5, "delay": 3}, {"enemy": "gloomwing", "count": 6, "interval": 1.5, "delay": 10}]
+  ]
+}

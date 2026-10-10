@@ -6,7 +6,7 @@ import pygame
 
 from ..settings import FIELD_HEIGHT, WIDTH
 from . import palette as P
-from .art import SpriteBank, background, goo_splat, radar_dish
+from .art import SpriteBank, background, goo_splat, radar_dish, scale_by
 
 
 class FieldRenderer:
@@ -19,6 +19,7 @@ class FieldRenderer:
         self.time = 0.0
         self._shadows = {}
         self._ranges = {}
+        self.plate = scale_by(sprites.pad, 20 / 26)  # the smaller base plate for grid levels
 
     def splat(self, rng, radius, flying):
         return goo_splat(rng, radius, flying)
@@ -27,10 +28,18 @@ class FieldRenderer:
         w, s, sp = self.world, self.surface, self.sprites
         s.blit(self.ground, (0, 0))
 
-        for i, (px, py) in enumerate(w.pads):
-            s.blit(sp.pad, sp.pad.get_rect(center=(px, py)))
-            if ui.radial is not None and i == ui.radial.pad:
-                pygame.draw.rect(s, P.HAZARD, sp.pad.get_rect(center=(px, py)).inflate(2, 2), 1)
+        if w.grid is None:
+            for i, (px, py) in enumerate(w.pads):
+                s.blit(sp.pad, sp.pad.get_rect(center=(px, py)))
+                if ui.radial is not None and i == ui.radial.pad:
+                    pygame.draw.rect(s, P.HAZARD, sp.pad.get_rect(center=(px, py)).inflate(2, 2), 1)
+        else:
+            for pad in w.towers:
+                s.blit(self.plate, self.plate.get_rect(center=w.pads[pad]))
+            if w.kind == "maze":
+                self._route(s, w.path)
+            if ui.radial is not None:
+                pygame.draw.rect(s, P.HAZARD, pygame.Rect(w.grid.rect(w.pad_cells[ui.radial.pad])).inflate(2, 2), 1)
 
         core = sp.core[int(self.time * 2) % 2]
         s.blit(core, core.get_rect(center=w.core))
@@ -100,6 +109,19 @@ class FieldRenderer:
                 s.blit(ghost, ghost.get_rect(center=(px, py)))
             radial.draw(s, sp, font, self.time)
         return s
+
+    def _route(self, s, path):
+        """Maze levels: marching chevrons along the way the Hive will walk right now."""
+        offset = (self.time * 24) % 16
+        d = offset
+        while d < path.length:
+            x, y, h = path.position(d)
+            if x >= 0:
+                tip = (x + math.cos(h) * 3, y + math.sin(h) * 3)
+                for side in (-1, 1):
+                    a = h + side * 2.4
+                    pygame.draw.line(s, P.CREEP_VEIN, tip, (tip[0] + math.cos(a) * 4, tip[1] + math.sin(a) * 4))
+            d += 16
 
     def _shadow(self, s, x, y, r):
         shadow = self._shadows.get(r)
