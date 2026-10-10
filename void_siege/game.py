@@ -10,12 +10,14 @@ import sys
 
 import pygame
 
+from .core import levels
+from .core.grid import CELL
 from .core.world import TICK, World
 from .render import palette as P
 from .render.art import SpriteBank
 from .render.field import FieldRenderer
 from .render.fx import Effects
-from .render.hud import Hud
+from .render.hud import TOP_BAR, Hud, make_buttons
 from .render.radial import BUILD_ORDER, RadialMenu
 from .settings import ANDROID, FIELD_HEIGHT, FIELD_X, FIELD_Y, FPS, HEIGHT, SPEEDS, TITLE, WIDTH
 
@@ -29,6 +31,15 @@ THREAT_TIPS = {
                  "A Missile Battery's radar reveals them so every turret can fire."),
 }
 BACK_KEYS = (pygame.K_ESCAPE, pygame.K_AC_BACK)  # Esc on desktop, the Back button on Android
+BLOCKED_SAYS = {
+    "sealed": "Can't build there. It would seal the Hive's path, and they must have a way through.",
+    "occupied": "Can't build on top of the bugs. Wait for them to move.",
+}
+BUILD_HINTS = {
+    "pads": "Tap a build pad for a turret. Tap WAVE when ready.",
+    "open": "Tap any open ground beside the road for a turret. Tap WAVE when ready.",
+    "maze": "Your turrets are the walls. Tap any ground to build. Tap WAVE when ready.",
+}
 
 
 def outlined_text(font, text, color, outline=P.BLACK):
@@ -69,16 +80,23 @@ class Game:
             "title": pygame.font.Font(None, 72),
         }
         self.sprites = SpriteBank()
+        self.progress = levels.Progress()
+        self.level = 0
         self.running = True
         self.portrait = False
         self._orientation_check = 0
         self.scene = MenuScene(self)
 
-    def start_battle(self):
-        self.scene = BattleScene(self)
+    def start_battle(self, level=None):
+        if level is not None:
+            self.level = level
+        self.scene = BattleScene(self, self.level)
 
     def to_menu(self):
         self.scene = MenuScene(self)
+
+    def to_levels(self):
+        self.scene = LevelSelectScene(self)
 
     def step(self, dt, events=()):
         self._orientation_check -= 1
@@ -134,10 +152,10 @@ class MenuScene:
         if event.type == pygame.MOUSEMOTION:
             self.mouse = event.pos
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            self.game.start_battle()  # tap anywhere to deploy
+            self.game.to_levels()  # tap anywhere to deploy
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
-                self.game.start_battle()
+                self.game.to_levels()
             elif event.key in BACK_KEYS:
                 self.game.running = False
 
@@ -171,7 +189,7 @@ class MenuScene:
 
         title = outlined_text(f["title"], "VOID SIEGE", P.HAZARD, P.RUST)
         screen.blit(title, title.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 80)))
-        sub = outlined_text(f["normal"], "Hold Dustfall Ridge against the Skrell Hive", P.TEAM_BLUE_LIGHT)
+        sub = outlined_text(f["normal"], "Hold the frontier against the Skrell Hive", P.TEAM_BLUE_LIGHT)
         screen.blit(sub, sub.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 42)))
 
         hover = self.button.collidepoint(self.mouse)
@@ -181,12 +199,114 @@ class MenuScene:
         screen.blit(label, label.get_rect(center=self.button.center))
 
         help_lines = [
-            "Tap a pad to build.  Tap a turret to upgrade, sell or aim.",
+            "Tap where you want a turret.  Tap a turret to upgrade, sell or aim.",
             "Tap once to see details, tap again to confirm.",
         ]
         for i, line in enumerate(help_lines):
             img = outlined_text(f["small"], line, P.STEEL_LIGHT)
             screen.blit(img, img.get_rect(center=(WIDTH // 2, HEIGHT - 34 + i * 14)))
+
+
+class LevelSelectScene:
+    """Pick a sector. Cards show the level's style and best stars; clearing a level opens the next."""
+
+    COLS = 3
+    CARD_W, CARD_H = 180, 70
+
+    def __init__(self, game):
+        self.game = game
+        self.levels = [levels.info(i) for i in range(len(levels.LEVELS))]
+        self.cards = []
+        rows = (len(self.levels) + self.COLS - 1) // self.COLS
+        gap = 12
+        top = (HEIGHT - rows * self.CARD_H - (rows - 1) * gap) // 2 + 14
+        left = (WIDTH - self.COLS * self.CARD_W - (self.COLS - 1) * gap) // 2
+        for i in range(len(self.levels)):
+            r, c = divmod(i, self.COLS)
+            self.cards.append(pygame.Rect(left + c * (self.CARD_W + gap), top + r * (self.CARD_H + gap),
+                                          self.CARD_W, self.CARD_H))
+        self.back = pygame.Rect(6, 6, 64, 30)
+        self.message, self.message_time = "", 0.0
+        self.time = 0.0
+
+    def handle(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.tap(event.pos)
+        elif event.type == pygame.KEYDOWN:
+            if event.key in BACK_KEYS:
+                self.game.to_menu()
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                self.game.start_battle(self.newest())
+
+    def newest(self):
+        """The furthest level the player can play."""
+        return max(i for i in range(len(self.levels)) if self.game.progress.unlocked(i))
+
+    def tap(self, pos):
+        if self.back.collidepoint(pos):
+            self.game.to_menu()
+            return
+        for i, rect in enumerate(self.cards):
+            if rect.collidepoint(pos):
+                if self.game.progress.unlocked(i):
+                    self.game.start_battle(i)
+                else:
+                    self.message, self.message_time = f"Clear sector {i} to unlock this one.", 2.5
+                return
+
+    def update(self, dt):
+        self.time += dt
+        self.message_time = max(0.0, self.message_time - dt)
+
+    def draw(self, screen):
+        f, progress = self.game.fonts, self.game.progress
+        screen.fill(P.BLACK)
+        for i in range(90):  # a quiet star field
+            x = (i * 97 + int(self.time * (6 + i % 3 * 6))) % WIDTH
+            screen.set_at((x, (i * 53) % HEIGHT), P.STEEL_LIGHT if i % 3 else P.STEEL_DARK)
+        title = outlined_text(f["big"], "SELECT SECTOR", P.HAZARD, P.RUST)
+        screen.blit(title, title.get_rect(center=(WIDTH // 2, 20)))
+        for i, (lv, rect) in enumerate(zip(self.levels, self.cards)):
+            open_ = progress.unlocked(i)
+            stars = progress.best(i)
+            pygame.draw.rect(screen, P.HAZARD if open_ and stars == 0 and i == self.newest() else P.STEEL_DARK, rect)
+            pygame.draw.rect(screen, P.GUNMETAL if open_ else (24, 26, 30), rect.inflate(-4, -4))
+            color = P.CRT_GREEN if open_ else P.STEEL_DARK
+            num = outlined_text(f["big"], str(i + 1), P.HAZARD if open_ else P.STEEL_DARK)
+            screen.blit(num, (rect.x + 8, rect.y + 6))
+            name = outlined_text(f["normal"], lv["name"].upper(), color)
+            screen.blit(name, (rect.x + 30, rect.y + 8))
+            kind = outlined_text(f["small"], levels.KIND_LABELS[lv["kind"]], P.TEAM_BLUE_LIGHT if open_ else P.STEEL_DARK)
+            screen.blit(kind, (rect.x + 30, rect.y + 28))
+            waves = outlined_text(f["small"], f"{lv['waves']} WAVES", P.STEEL_LIGHT if open_ else P.STEEL_DARK)
+            screen.blit(waves, waves.get_rect(topright=(rect.right - 8, rect.y + 47)))
+            if open_:
+                for s in range(3):
+                    draw_star(screen, rect.x + 40 + s * 22, rect.y + 52, s < stars, 8)
+            else:
+                lock = pygame.Rect(0, 0, 14, 11)
+                lock.center = (rect.x + 48, rect.y + 54)
+                pygame.draw.arc(screen, P.STEEL, lock.move(0, -8).inflate(-4, 4), 0, math.pi, 2)
+                pygame.draw.rect(screen, P.STEEL, lock)
+                img = outlined_text(f["small"], "LOCKED", P.STEEL_DARK)
+                screen.blit(img, (rect.x + 64, rect.y + 49))
+        pygame.draw.rect(screen, P.STEEL_DARK, self.back)
+        pygame.draw.rect(screen, P.GUNMETAL, self.back.inflate(-4, -4))
+        img = outlined_text(f["normal"], "BACK", P.CRT_GREEN)
+        screen.blit(img, img.get_rect(center=self.back.center))
+        if self.message_time > 0:
+            img = outlined_text(f["normal"], self.message, P.HAZARD)
+            screen.blit(img, img.get_rect(center=(WIDTH // 2, HEIGHT - 14)))
+
+
+def draw_star(screen, x, y, filled, size=10):
+    pts = []
+    for i in range(10):
+        r = size if i % 2 == 0 else size * 0.4
+        a = -math.pi / 2 + i * math.pi / 5
+        pts.append((x + math.cos(a) * r, y + math.sin(a) * r))
+    pygame.draw.polygon(screen, P.HAZARD if filled else P.STEEL_DARK, pts)
+    pygame.draw.polygon(screen, P.BLACK, pts, 1)
 
 
 class UiState:
@@ -208,19 +328,23 @@ class UiState:
 
 
 class BattleScene:
-    def __init__(self, game, map_name="map01"):
+    def __init__(self, game, level=0):
         self.game = game
-        self.world = World(map_name, offset_x=FIELD_X, offset_y=FIELD_Y)
+        self.level = level
+        reserved = [b.rect for b in make_buttons()] + [TOP_BAR]  # no turrets hidden under the HUD
+        self.world = World(levels.LEVELS[level], offset_x=FIELD_X, offset_y=FIELD_Y, reserved=reserved)
         self.ui = UiState()
         self.field = FieldRenderer(self.world, game.sprites)
         self.fx = Effects(game.fonts["small"])
         self.hud = Hud((game.fonts["normal"], game.fonts["small"]), game.sprites, self.field)
         self.accumulator = 0.0
         self.over_time = 0.0
+        self.recorded = False
         self.overlay_buttons = []
-        self.fx.say("Commander, the Hive is moving on the colony.")
-        self.fx.say("Tap a pad to build turrets. Tap WAVE when ready.")
         self.warned = set()
+        for line in self.world.map.get("intro", ["Commander, the Hive is moving on the colony."]):
+            self.fx.say(line, seconds=6.0)
+        self.fx.say(BUILD_HINTS[self.world.kind], seconds=6.0)
 
     # ---- input ------------------------------------------------------------------
 
@@ -262,10 +386,19 @@ class BattleScene:
             return
         ui.radial = None
         pad = self._pad_near(pos)
-        if pad is not None:
+        blocked = pad is not None and w.blocks_route(pad)
+        if blocked:
+            self.fx.say(BLOCKED_SAYS[blocked])
+        elif pad is not None:
             ui.radial = RadialMenu(w, pad)
 
     def _pad_near(self, pos):
+        w = self.world
+        if w.grid is not None:  # open and maze levels: the cell under the finger
+            g, (x, y) = w.grid, pos
+            if not (g.ox <= x < g.ox + g.cols * CELL and g.oy <= y < g.oy + g.rows * CELL):
+                return None
+            return w.cell_pad.get(g.cell_at(x, y))
         best, best_d = None, PAD_TAP_RADIUS
         for i, (px, py) in enumerate(self.world.pads):
             d = math.hypot(pos[0] - px, pos[1] - py)
@@ -284,7 +417,11 @@ class BattleScene:
             return
         w = self.world
         if opt.action == "build":
-            w.build(opt.arg, radial.pad)
+            blocked = w.blocks_route(radial.pad)  # the maze may have changed since the ring opened
+            if blocked:
+                self.fx.say(BLOCKED_SAYS[blocked])
+            else:
+                w.build(opt.arg, radial.pad)
             self.ui.radial = None
         elif opt.action == "upgrade":
             w.upgrade(radial.tower)
@@ -311,11 +448,13 @@ class BattleScene:
         if w.over:
             if key == pygame.K_r:
                 self.game.start_battle()
+            elif key == pygame.K_n and self._has_next():
+                self._next()
             elif key in (*BACK_KEYS, pygame.K_m, pygame.K_RETURN):
-                self.game.to_menu()
+                self.game.to_levels()
             return
         if ui.paused and key == pygame.K_q:
-            self.game.to_menu()
+            self.game.to_levels()
         elif key in BUILD_KEYS:
             self._confirm("build", BUILD_ORDER[BUILD_KEYS[key]])
         elif key == pygame.K_u:
@@ -362,6 +501,9 @@ class BattleScene:
             self.field.time += dt
             self.fx.update(dt * ui.speed)
         elif w.over:
+            if not self.recorded:
+                self.recorded = True
+                self.game.progress.record(self.level, w.stars)
             self.over_time += dt
             self.fx.update(dt)
             ui.radial = None
@@ -389,15 +531,23 @@ class BattleScene:
         self.overlay_buttons = []
         if self.ui.paused and not self.world.over:
             self._overlay(screen, "PAUSED", "The Hive waits for no one.", P.HAZARD,
-                          buttons=[("RESUME", lambda: self.do("pause")), ("QUIT", self.game.to_menu)])
+                          buttons=[("RESUME", lambda: self.do("pause")), ("QUIT", self.game.to_levels)])
         if self.world.over and self.over_time > 0.6:
-            buttons = [("RETRY", self.game.start_battle), ("MENU", self.game.to_menu)]
+            buttons = [("RETRY", self.game.start_battle), ("LEVELS", self.game.to_levels)]
             if self.world.won:
-                self._overlay(screen, "VICTORY", f"Dustfall Ridge holds.  Kills: {self.world.kills}", P.CRT_GREEN,
-                              stars=self.world.stars, buttons=buttons)
+                if self._has_next():
+                    buttons.insert(0, ("NEXT", self._next))
+                self._overlay(screen, "VICTORY", f"{self.world.map['name']} holds.  Kills: {self.world.kills}",
+                              P.CRT_GREEN, stars=self.world.stars, buttons=buttons)
             else:
                 self._overlay(screen, "CORE DESTROYED", f"The Hive overran the colony on wave "
                                                         f"{self.world.waves.index + 1}.", P.RED, buttons=buttons)
+
+    def _has_next(self):
+        return self.level + 1 < len(levels.LEVELS)
+
+    def _next(self):
+        self.game.start_battle(self.level + 1)
 
     def _overlay(self, screen, title, subtitle, color, stars=None, buttons=()):
         f = self.game.fonts
@@ -416,25 +566,17 @@ class BattleScene:
         y = box.y + 70
         if stars is not None:
             for i in range(3):
-                self._star(screen, box.centerx - 30 + i * 30, y, i < stars)
+                draw_star(screen, box.centerx - 30 + i * 30, y, i < stars)
             y += 24
+        width = 110 if len(buttons) < 3 else 88
         for i, (label, action) in enumerate(buttons):
-            rect = pygame.Rect(0, 0, 110, 36)
-            rect.center = (box.centerx - 60 + i * 120, y + 16)
+            rect = pygame.Rect(0, 0, width, 36)
+            rect.center = (box.centerx + (i - (len(buttons) - 1) / 2) * (width + 8), y + 16)
             pygame.draw.rect(screen, P.STEEL_DARK, rect)
             pygame.draw.rect(screen, P.GUNMETAL, rect.inflate(-4, -4))
             img = outlined_text(f["normal"], label, P.CRT_GREEN)
             screen.blit(img, img.get_rect(center=rect.center))
             self.overlay_buttons.append((rect, action))
-
-    def _star(self, screen, x, y, filled):
-        pts = []
-        for i in range(10):
-            r = 10 if i % 2 == 0 else 4
-            a = -math.pi / 2 + i * math.pi / 5
-            pts.append((x + math.cos(a) * r, y + math.sin(a) * r))
-        pygame.draw.polygon(screen, P.HAZARD if filled else P.STEEL_DARK, pts)
-        pygame.draw.polygon(screen, P.BLACK, pts, 1)
 
 
 def main():

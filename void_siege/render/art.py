@@ -322,7 +322,8 @@ def command_core(blink):
 
 
 def background(world, seed=7):
-    """Paint the static map: badlands, alien creep at the spawn, the road and the core platform."""
+    """Paint the static map: badlands, alien creep at the spawn, the road (none on maze levels),
+    rock ridges, faint build-grid marks on open ground, and the core platform."""
     from ..settings import FIELD_HEIGHT, WIDTH
 
     rng = random.Random(seed)
@@ -337,7 +338,8 @@ def background(world, seed=7):
         patch = pygame.Surface((w, h), pygame.SRCALPHA)
         pygame.draw.ellipse(patch, (*P.SAND_DARK, 90), patch.get_rect())
         s.blit(patch, (x - w // 2, y - h // 2))
-    for _ in range(9):  # craters
+    road = world.kind != "maze"
+    for _ in range(9 if world.grid is None else 0):  # craters (they would look like obstacles on a grid)
         x, y, r = rng.randrange(WIDTH), rng.randrange(FIELD_HEIGHT), rng.randrange(5, 12)
         if world.path.distance_to(x, y) < r + 16:
             continue
@@ -346,7 +348,9 @@ def background(world, seed=7):
         pygame.draw.ellipse(s, P.ROCK_DARK, (x - r + 4, y - r // 2 + 2, r * 2 - 8, r - 4))
     for _ in range(40):  # rocks
         x, y = rng.randrange(WIDTH), rng.randrange(FIELD_HEIGHT)
-        if world.path.distance_to(x, y) < 18 or any(math.hypot(x - px, y - py) < 18 for px, py in world.pads):
+        if road and world.path.distance_to(x, y) < 18:
+            continue
+        if world.grid is None and any(math.hypot(x - px, y - py) < 18 for px, py in world.pads):
             continue
         r = rng.randrange(2, 5)
         pygame.draw.circle(s, P.ROCK_DARK, (x + 1, y + 1), r)
@@ -354,7 +358,7 @@ def background(world, seed=7):
         s.set_at((x - 1, y - 1), P.SAND_LIGHT)
 
     # alien creep spreading from the spawn tunnel
-    sx, sy = world.path.points[0]
+    sx, sy = world.spawn_point
     creep = pygame.Surface((WIDTH, FIELD_HEIGHT), pygame.SRCALPHA)
     for _ in range(70):
         a, d = rng.uniform(-1.6, 1.6), rng.uniform(0, 70)
@@ -374,17 +378,19 @@ def background(world, seed=7):
             pygame.draw.line(s, P.CREEP_VEIN, (x, y), (nx, ny))
             x, y, a = nx, ny, a + rng.uniform(-0.5, 0.5)
 
-    # the road
-    pts = [(int(x), int(y)) for x, y in world.path.points]
-    for width, color in ((28, P.ROAD_EDGE), (22, P.ROAD)):
-        pygame.draw.lines(s, color, False, pts, width)
-        for p in pts:
-            pygame.draw.circle(s, color, p, width // 2)
-    for d in range(0, int(world.path.length), 5):  # tread marks
-        x, y, h = world.path.position(d)
-        for side in (-5, 5):
-            ox, oy = -math.sin(h) * side, math.cos(h) * side
-            s.set_at((int(x + ox), int(y + oy)), P.ROAD_EDGE)
+    if road:
+        pts = [(int(x), int(y)) for x, y in world.path.points]
+        for width, color in ((28, P.ROAD_EDGE), (22, P.ROAD)):
+            pygame.draw.lines(s, color, False, pts, width)
+            for p in pts:
+                pygame.draw.circle(s, color, p, width // 2)
+        for d in range(0, int(world.path.length), 5):  # tread marks
+            x, y, h = world.path.position(d)
+            for side in (-5, 5):
+                ox, oy = -math.sin(h) * side, math.cos(h) * side
+                s.set_at((int(x + ox), int(y + oy)), P.ROAD_EDGE)
+    if world.grid is not None:
+        _grid_marks(s, world, rng)
     # spawn tunnel
     pygame.draw.ellipse(s, P.CREEP_DARK, (sx - 10, sy - 14, 30, 28))
     pygame.draw.ellipse(s, P.BLACK, (sx - 4, sy - 9, 20, 18))
@@ -398,6 +404,25 @@ def background(world, seed=7):
     for i in range(0, 56, 6):
         pygame.draw.line(s, P.HAZARD, (cx - 28 + i, cy + 27), (cx - 25 + i, cy + 24))
     return s
+
+
+def _grid_marks(s, world, rng):
+    """Corner ticks on every buildable cell, so open ground reads as "you can build here", and
+    boulders on the rock cells that nothing can cross."""
+    g = world.grid
+    for cell in world.pad_cells:
+        x, y, w, h = (int(v) for v in g.rect(cell))
+        for cx, cy, dx, dy in ((x, y, 1, 1), (x + w - 1, y, -1, 1), (x, y + h - 1, 1, -1), (x + w - 1, y + h - 1, -1, -1)):
+            s.set_at((cx, cy), P.SAND_DARK)
+            s.set_at((cx + dx, cy), P.SAND_DARK)
+            s.set_at((cx, cy + dy), P.SAND_DARK)
+    for cell in sorted(g.rocks, key=lambda c: c[1]):
+        x, y = g.center(cell)
+        for _ in range(3):
+            ox, oy, r = rng.randrange(-4, 5), rng.randrange(-4, 5), rng.randrange(6, 10)
+            pygame.draw.circle(s, P.ROCK_DARK, (int(x + ox + 1), int(y + oy + 2)), r)
+            pygame.draw.circle(s, P.ROCK, (int(x + ox), int(y + oy)), r - 1)
+            pygame.draw.circle(s, P.SAND_LIGHT, (int(x + ox - r // 3), int(y + oy - r // 3)), 1)
 
 
 def goo_splat(rng, radius, flying=False):

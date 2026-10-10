@@ -1,9 +1,10 @@
 import pytest
 
+from void_siege.core.levels import LEVELS, Progress
 from void_siege.core.path import Path
 from void_siege.core.targeting import choose_target
 from void_siege.core.world import TICK, World
-from void_siege.tests.autoplay import play
+from void_siege.tests.autoplay import play, smart_play
 
 
 def run(world, seconds):
@@ -19,11 +20,14 @@ def test_path_position_and_length():
     assert path.position(99)[:2] == (10, 10)
 
 
-def test_pads_stay_clear_of_the_road():
-    world = World()
+@pytest.mark.parametrize("name", LEVELS)
+def test_build_spots_stay_clear_of_the_road(name):
+    world = World(name)
+    assert world.pads
     for x, y in world.pads:
-        assert world.path.distance_to(x, y) >= 28, (x, y)
-        assert 12 <= y <= 268
+        if world.kind != "maze":
+            assert world.path.distance_to(x, y) >= 24, (name, x, y)
+        assert 10 <= y <= 270 and 10 <= x <= 630
 
 
 def test_build_upgrade_and_sell_economy():
@@ -159,3 +163,44 @@ def test_shifted_map_keeps_spawn_at_screen_edge_and_is_still_winnable():
     assert world.core == (base.core[0] + 80, base.core[1])
     play(world)
     assert world.won
+
+
+@pytest.mark.parametrize("name", LEVELS)
+def test_every_level_is_winnable_and_idling_loses(name):
+    assert smart_play(World(name)).won
+    assert smart_play(World(name), max_towers=0).lost
+
+
+def test_maze_walkers_take_the_new_route_when_a_wall_goes_up():
+    world = World("map04")
+    world.minerals = 10_000
+    bug = world.spawn("skitterling")
+    for _ in range(60):
+        world.update()
+    for r in range(world.grid.rows - 1):
+        world.build("bunker", world.cell_pad[(12, r)])
+    assert bug.path is not world.path and bug.path.length > 300
+    gap = world.grid.center((12, world.grid.rows - 1))
+    assert min(bug.path.distance_to(*gap), world.path.distance_to(*gap)) < 1  # both go through the gap
+    assert world.blocks_route(world.cell_pad[(12, world.grid.rows - 1)]) == "sealed"
+    world.sell(world.towers[world.cell_pad[(12, 5)]])
+    assert world.path.distance_to(*world.grid.center((12, 5))) < 1  # selling opens a shortcut
+
+
+def test_maze_flyers_ignore_the_walls():
+    world = World("map06")
+    flyer = world.spawn("gloomwing")
+    assert flyer.path.length == pytest.approx(world.flight_path.length)
+    assert len(world.path.points) > 4  # the rock ridges already force the ground route to wind
+
+
+def test_progress_unlocks_next_level_and_survives_reload(tmp_path):
+    path = tmp_path / "save" / "progress.json"
+    p = Progress(path)
+    assert p.unlocked(0) and not p.unlocked(1)
+    p.record(0, 2)
+    p.record(0, 1)  # a worse run never lowers the best
+    again = Progress(path)
+    assert again.best(0) == 2 and again.unlocked(1) and not again.unlocked(2)
+    path.write_text("not json")
+    assert Progress(path).best(0) == 0

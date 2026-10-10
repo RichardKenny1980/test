@@ -8,11 +8,11 @@ def choose_target(tower, enemies):
         return None
     mode = tower.targeting
     if mode == "first":
-        return max(candidates, key=lambda e: e.distance)
+        return max(candidates, key=lambda e: e.travelled)
     if mode == "last":
-        return min(candidates, key=lambda e: e.distance)
+        return min(candidates, key=lambda e: e.travelled)
     if mode == "strongest":
-        return max(candidates, key=lambda e: (e.hp, e.distance))
+        return max(candidates, key=lambda e: (e.hp, e.travelled))
     if mode == "closest":
         return min(candidates, key=lambda e: math.hypot(e.x - tower.x, e.y - tower.y))
     raise ValueError(f"unknown targeting mode {mode!r}")

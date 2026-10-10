@@ -7,6 +7,7 @@ from . import palette as P
 
 TIER_NAMES = ("Mk I", "Mk II", "Mk III")
 CARD_W, CARD_H = 250, 74
+TOP_BAR = (WIDTH - 238, 2, 236, 15)
 
 
 class Button:
@@ -167,9 +168,9 @@ class Hud:
                 screen.blit(img, img.get_rect(center=r.center))
 
     def _top_bar(self, screen, world, ui):
-        bar = pygame.Surface((236, 15), pygame.SRCALPHA)
+        bar = pygame.Surface(TOP_BAR[2:], pygame.SRCALPHA)
         bar.fill((10, 10, 16, 170))
-        screen.blit(bar, (WIDTH - 238, 2))
+        screen.blit(bar, TOP_BAR[:2])
         x = WIDTH - 232
         screen.blit(self.sprites.mineral, (x, 4))
         self._text(screen, str(world.minerals), (x + 11, 5), P.MINERAL)

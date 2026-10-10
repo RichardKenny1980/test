@@ -2,6 +2,7 @@ import math
 
 from .data import load_all
 from .entities import Enemy, Projectile, Tower
+from .grid import CELL, Grid
 from .path import Path
 from .targeting import choose_target
 
@@ -73,26 +74,57 @@ def shift_map(m, dx, dy=0):
     """Move a map by (dx, dy) to centre it on a bigger screen. A path that starts off the left edge
     still starts there, so enemies keep walking in from the edge of the screen."""
     m = dict(m)
-    path = [[x + dx, y + dy] for x, y in m["path"]]
-    if m["path"][0][0] < 0:
-        path[0][0] = m["path"][0][0]
-    m["path"] = path
-    m["pads"] = [[x + dx, y + dy] for x, y in m["pads"]]
+    if "path" in m:
+        path = [[x + dx, y + dy] for x, y in m["path"]]
+        if m["path"][0][0] < 0:
+            path[0][0] = m["path"][0][0]
+        m["path"] = path
+    if "spawn" in m:
+        x, y = m["spawn"]
+        m["spawn"] = [x if x < 0 else x + dx, y + dy]
+    m["pads"] = [[x + dx, y + dy] for x, y in m.get("pads", [])]
     m["core"] = [m["core"][0] + dx, m["core"][1] + dy]
     return m
+
+
+def _overlaps(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
 class World:
     """The whole battle simulation. Call update() at a fixed tick rate."""
 
-    def __init__(self, map_name="map01", offset_x=0, offset_y=0):
+    def __init__(self, map_name="map01", offset_x=0, offset_y=0, reserved=()):
+        """`reserved` lists screen rects (x, y, w, h) kept free of turrets, such as the HUD buttons."""
         self.tower_specs, self.enemy_specs, self.map = load_all(map_name)
+        self.map_name = map_name
+        self.kind = self.map.get("kind", "pads")  # pads | open | maze
         if offset_x or offset_y:
             self.map = shift_map(self.map, offset_x, offset_y)
-        self.path = Path(self.map["path"])
-        self.flight_path = Path([self.map["path"][0], self.map["path"][-1]])
-        self.pads = [tuple(p) for p in self.map["pads"]]
         self.core = tuple(self.map["core"])
+        self.grid = None
+        if self.kind == "pads":
+            self.pads = [tuple(p) for p in self.map["pads"]]
+        else:
+            self.grid = Grid(self.map.get("cols", 32), self.map.get("rows", 14), (offset_x, offset_y),
+                             self.map.get("rocks", ()))
+        if self.kind == "maze":
+            self.entry = self.grid.cell_at(*self.map["spawn"])
+            self.core_cell = self.grid.cell_at(*self.core)
+            self.walls = set()
+            self.path = self._maze_path(self.entry, self.grid.distances(self.core_cell, self.walls),
+                                        self.map["spawn"])
+        else:
+            self.path = Path(self.map["path"])
+        self.spawn_point = self.path.points[0]
+        self.flight_path = Path([self.spawn_point, self.core])
+        if self.grid is not None:
+            self.pad_cells = [c for c in self.grid.cells() if self._buildable(c, reserved)]
+            self.pads = [self.grid.center(c) for c in self.pad_cells]
+            self.cell_pad = {c: i for i, c in enumerate(self.pad_cells)}
+        self.hp_scale = self.map.get("hp_scale", 1.0)
         self.minerals = self.map["start_minerals"]
         self.core_hp = self.max_core_hp = self.map["core_hp"]
         self.waves = WaveManager(self.map["waves"], self.map.get("wave_gap", 20))
@@ -108,14 +140,65 @@ class World:
     def build_cost(self, kind):
         return self.tower_specs[kind]["tiers"][0]["cost"]
 
+    def _buildable(self, cell, reserved):
+        g = self.grid
+        rect = g.rect(cell)
+        cx, cy = self.core
+        if cell in g.rocks or _overlaps(rect, (cx - 30, cy - 30, 60, 60)):
+            return False
+        if any(_overlaps(rect, r) for r in reserved):
+            return False
+        if self.kind == "maze":
+            return cell != self.entry
+        x, y = g.center(cell)
+        return self.path.distance_to(x, y) >= CELL / 2 + 14  # clear of the 28px road
+
+    def blocks_route(self, pad):
+        """Maze levels: why a turret can't go on this pad right now, or None if it can.
+        "occupied": a walker is standing there. "sealed": it would cut the Hive off from the core
+        or trap a walker."""
+        if self.kind != "maze" or pad in self.towers:
+            return None
+        cell = self.pad_cells[pad]
+        g = self.grid
+        cx, cy = g.center(cell)
+        for e in self.enemies:
+            if not e.flying and abs(e.x - cx) < CELL / 2 + e.radius and abs(e.y - cy) < CELL / 2 + e.radius:
+                return "occupied"
+        dist = g.distances(self.core_cell, self.walls | {cell})
+        if self.entry not in dist or any(g.cell_at(e.x, e.y) not in dist for e in self.enemies if not e.flying):
+            return "sealed"
+        return None
+
+    def _maze_path(self, start, dist, from_point):
+        return Path([tuple(from_point)] + self.grid.points(self.grid.route(start, dist)))
+
+    def _reroute(self):
+        """Maze levels: after a turret goes up or comes down, every walker takes the new shortest way."""
+        g = self.grid
+        self.walls = {self.pad_cells[p] for p in self.towers}
+        dist = g.distances(self.core_cell, self.walls)
+        self.path = self._maze_path(self.entry, dist, self.spawn_point)
+        for e in self.enemies:
+            if e.flying:
+                continue
+            here = (e.x, e.y)
+            cells = g.route(g.cell_at(*here), dist)
+            pts = [here] + g.points(cells) if cells else [here, self.core]
+            e.path, e.distance = Path(pts), 0.0
+            e.update(0.0)
+        self._event("reroute")
+
     def build(self, kind, pad):
-        if pad in self.towers or self.minerals < self.build_cost(kind):
+        if pad in self.towers or self.minerals < self.build_cost(kind) or self.blocks_route(pad):
             return None
         x, y = self.pads[pad]
         tower = Tower(kind, self.tower_specs[kind], x, y, pad)
         self.minerals -= tower.spent
         self.towers[pad] = tower
         self._event("build", x=x, y=y)
+        if self.kind == "maze":
+            self._reroute()
         return tower
 
     def upgrade(self, tower):
@@ -132,6 +215,8 @@ class World:
         self.minerals += tower.sell_value
         del self.towers[tower.pad]
         self._event("sell", x=tower.x, y=tower.y, amount=tower.sell_value)
+        if self.kind == "maze":
+            self._reroute()
 
     def call_wave(self):
         """Start the next wave now. Calling early pays a bonus for the time skipped."""
@@ -178,10 +263,11 @@ class World:
 
     # ---- simulation -------------------------------------------------------
 
-    def spawn(self, kind, distance=0.0):
+    def spawn(self, kind, distance=0.0, path=None):
         stats = self.enemy_specs[kind]
-        path = self.flight_path if stats.get("flying") else self.path
-        enemy = Enemy(kind, stats, path, distance=distance)
+        if path is None:
+            path = self.flight_path if stats.get("flying") else self.path
+        enemy = Enemy(kind, stats, path, distance=distance, hp=stats["hp"] * self.hp_scale)
         self.enemies.append(enemy)
         return enemy
 
@@ -207,7 +293,7 @@ class World:
                 enemy.spawn_timer -= dt
                 if enemy.spawn_timer <= 0:
                     enemy.spawn_timer += enemy.stats["spawn_every"]
-                    child = self.spawn(enemy.stats["spawns"], distance=max(0.0, enemy.distance - 6))
+                    child = self.spawn(enemy.stats["spawns"], distance=max(0.0, enemy.distance - 6), path=enemy.path)
                     self._event("brood", x=child.x, y=child.y)
             if enemy.reached_end:
                 enemy.alive = False
